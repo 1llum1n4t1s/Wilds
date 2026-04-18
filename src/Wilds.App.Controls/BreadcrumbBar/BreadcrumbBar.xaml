@@ -145,7 +145,7 @@
 										<MenuFlyout.MenuFlyoutPresenterStyle>
 											<Style TargetType="MenuFlyoutPresenter">
 												<Setter Property="MaxHeight" Value="400" />
-												<!--  Workaround for https://github.com/files-community/Files/issues/13078  -->
+												<!--  Workaround for https://github.com/1llum1n4t1s/Wilds/issues  -->
 												<Setter Target="HighContrastAdjustment" Value="None" />
 											</Style>
 										</MenuFlyout.MenuFlyoutPresenterStyle>
@@ -197,7 +197,7 @@
 										<MenuFlyout.MenuFlyoutPresenterStyle>
 											<Style TargetType="MenuFlyoutPresenter">
 												<Setter Property="MaxHeight" Value="400" />
-												<!--  Workaround for https://github.com/files-community/Files/issues/13078  -->
+												<!--  Workaround for https://github.com/1llum1n4t1s/Wilds/issues  -->
 												<Setter Target="HighContrastAdjustment" Value="None" />
 											</Style>
 										</MenuFlyout.MenuFlyoutPresenterStyle>

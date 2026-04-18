@@ -22,7 +22,7 @@
 		<StackPanel Spacing="8">
 			<TextBox
 				Header="{helpers:ResourceString Name=RepositoryURL}"
-				PlaceholderText="https://github.com/files-community/Files"
+				PlaceholderText="https://github.com/1llum1n4t1s/Wilds/issues"
 				Text="{x:Bind ViewModel.RepoUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 		</StackPanel>
 	</Grid>

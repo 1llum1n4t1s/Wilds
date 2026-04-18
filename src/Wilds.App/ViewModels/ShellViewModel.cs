@@ -889,7 +889,7 @@ namespace Wilds.App.ViewModels
 		private Task RequestSelectionAsync(List<ListedItem> itemsToSelect)
 		{
 			// Don't notify if shell page is not the active pane (eg. Dual Pane)
-			// https://github.com/files-community/Files/issues/17427
+			// https://github.com/1llum1n4t1s/Wilds/issues
 			if (WorkingDirectory != ContentPageContext.ShellPage!.ShellViewModel.WorkingDirectory)
 				return Task.CompletedTask;
 

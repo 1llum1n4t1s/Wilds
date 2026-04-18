@@ -174,7 +174,7 @@ namespace Wilds.App.Views.Shells
 				FilesystemViewModel_DirectoryInfoUpdated(sender, EventArgs.Empty);
 
 			// Update the ShellViewModel with the current working directory
-			// Fixes https://github.com/files-community/Files/issues/17469
+			// Fixes https://github.com/1llum1n4t1s/Wilds/issues
 			if (parameters.IsSearchResultPage == false)
 				ShellViewModel.IsSearchResults = false;
 

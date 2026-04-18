@@ -541,7 +541,7 @@ namespace Wilds.App.Views.Layouts
 				CloseFolder();
 
 				// Clear selection when clicking empty area via touch
-				// https://github.com/files-community/Files/issues/15051
+				// https://github.com/1llum1n4t1s/Wilds/issues
 				if (e.PointerDeviceType == PointerDeviceType.Touch)
 					ItemManipulationModel.ClearSelection();
 			}

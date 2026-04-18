@@ -625,7 +625,7 @@ namespace Wilds.App.Utils.StatusCenter
 			{
 				// Include null check for items that don't have a parent dir
 				// This can happen when dragging an image from the browser
-				// https://github.com/files-community/Files/issues/13590
+				// https://github.com/1llum1n4t1s/Wilds/issues
 				if (card.Source.First() != null)
 				{
 					sourcePath = PathNormalization.GetParentDir(card.Source.First());

@@ -38,7 +38,7 @@ namespace Wilds.Shared.Helpers
 				return false;
 
 			// Don't check folder paths to avoid issues
-			// https://github.com/files-community/Files/issues/17094
+			// https://github.com/1llum1n4t1s/Wilds/issues
 			if (Directory.Exists(filePathToCheck))
 				return false;
 
