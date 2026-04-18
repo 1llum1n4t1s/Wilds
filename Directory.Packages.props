@@ -61,5 +61,6 @@
     <PackageVersion Include="MSTest.TestFramework" Version="4.2.1" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.2.1" />
     <PackageVersion Include="Dongle.GuidRVAGen" Version="1.0.5" />
+    <PackageVersion Include="Velopack" Version="0.0.1298" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,139 @@
+name: Velopack リリース作成
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WORKING_DIR: ${{ github.workspace }}
+  APP_PROJECT_PATH: '${{ github.workspace }}\src\Wilds.App\Wilds.App.csproj'
+  ARCHITECTURE: 'x64'
+  CONFIGURATION: 'Release'
+  ARTIFACTS_STAGING_DIR: '${{ github.workspace }}\artifacts'
+
+jobs:
+  build-and-release:
+    name: ビルド & Velopack アップロード
+    runs-on: windows-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: MSBuild をセットアップ
+        uses: microsoft/setup-msbuild@v3
+
+      - name: NuGet をセットアップ
+        uses: NuGet/setup-nuget@v3
+
+      - name: .NET SDK をセットアップ
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: リリースバージョンを抽出
+        shell: pwsh
+        run: |
+          $branchName = "${{ github.ref_name }}"
+          if ($branchName -match '^release/(\d+\.\d+\.\d+(?:\.\d+)?)$') {
+            $version = $matches[1]
+          } else {
+            # workflow_dispatch: Directory.Build.props から TargetFrameworkVersion を拾うのは意味がないので
+            # 暫定で 0.0.0 を付与 (手動実行はテスト用途)
+            $version = "0.0.0"
+          }
+          Write-Host "Release version: $version"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "RELEASE_VERSION=$version" -Encoding utf8
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          msbuild "$env:WORKING_DIR\Wilds.slnx" `
+            -t:Restore `
+            -p:Platform=$env:ARCHITECTURE `
+            -p:Configuration=$env:CONFIGURATION `
+            -v:quiet
+
+      - name: Publish (self-contained, unpackaged)
+        shell: pwsh
+        run: |
+          dotnet publish $env:APP_PROJECT_PATH `
+            -c $env:CONFIGURATION `
+            -r "win-$env:ARCHITECTURE" `
+            -p:Version=$env:RELEASE_VERSION
+
+      - name: Velopack CLI をインストール
+        shell: pwsh
+        run: |
+          dotnet tool install --global vpk
+          $toolsPath = "$env:USERPROFILE\.dotnet\tools"
+          Add-Content -LiteralPath $env:GITHUB_PATH -Value $toolsPath -Encoding utf8
+
+      - name: Velopack パッケージを作成
+        shell: pwsh
+        run: |
+          $publishDir = "$env:WORKING_DIR\src\Wilds.App\bin\$env:CONFIGURATION\net10.0-windows10.0.26100.0\win-$env:ARCHITECTURE\publish"
+          $outputDir = Join-Path $env:ARTIFACTS_STAGING_DIR "velopack"
+          $iconPath = "$env:WORKING_DIR\src\Wilds.App\Assets\AppTiles\Dev\Logo.ico"
+          New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+
+          if (-not (Test-Path "$publishDir\Wilds.exe")) {
+            Write-Error "Wilds.exe not found under: $publishDir"
+            exit 1
+          }
+
+          vpk pack `
+            --packId Wilds `
+            --packVersion $env:RELEASE_VERSION `
+            --packTitle "Wilds" `
+            --packAuthors "1llum1n4t1s" `
+            --mainExe Wilds.exe `
+            --icon $iconPath `
+            --packDir $publishDir `
+            --outputDir $outputDir `
+            --channel win `
+            --shortcuts "StartMenu,Desktop"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "vpk pack failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+
+      - name: 既存リリースを削除
+        shell: pwsh
+        run: |
+          try {
+            $releases = @(gh release list --repo "${{ github.repository }}" --json tagName --limit 100 | ConvertFrom-Json)
+            $existing = $releases | Where-Object { $_.tagName -eq $env:RELEASE_VERSION } | Select-Object -First 1
+            if ($existing) {
+              Write-Host "Deleting existing release: $env:RELEASE_VERSION"
+              gh release delete $env:RELEASE_VERSION --repo "${{ github.repository }}" --yes --cleanup-tag
+            }
+          } catch {
+            Write-Host "No existing release or delete failed: $_"
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: GitHub Releases へアップロード
+        shell: pwsh
+        run: |
+          $outputDir = Join-Path $env:ARTIFACTS_STAGING_DIR "velopack"
+          $repoUrl = "https://github.com/${{ github.repository }}"
+
+          vpk upload github `
+            --repoUrl $repoUrl `
+            --token "${{ secrets.GITHUB_TOKEN }}" `
+            --outputDir $outputDir `
+            --channel win `
+            --publish `
+            --releaseName "Wilds $env:RELEASE_VERSION"
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "vpk upload failed with exit code $LASTEXITCODE"
+            exit 1
+          }

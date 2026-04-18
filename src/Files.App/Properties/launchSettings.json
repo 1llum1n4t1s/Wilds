@@ -1,7 +1,0 @@
-{
-  "profiles": {
-    "MsixPackage": {
-      "commandName": "MsixPackage"
-    }
-  }
-}

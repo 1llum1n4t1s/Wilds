@@ -1,0 +1,20 @@
+﻿// Copyright (c) Files Community
+// Licensed under the MIT License.
+
+using Microsoft.Management.Infrastructure;
+
+namespace Wilds.App.Data.EventArguments
+{
+	/// <summary>
+	/// CimWatcher event args, which contains CimSubscriptionResult
+	/// </summary>
+	public sealed class EventArrivedEventArgs : EventArgs
+	{
+		public CimSubscriptionResult NewEvent { get; }
+
+		public EventArrivedEventArgs(CimSubscriptionResult cimSubscriptionResult)
+		{
+			NewEvent = cimSubscriptionResult;
+		}
+	}
+}
