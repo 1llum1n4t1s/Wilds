@@ -228,7 +228,8 @@ namespace Wilds.App.Utils.Shell
 		/// <summary>
 		/// Performs application-defined tasks associated with freeing, releasing, or resetting unmanaged resources.
 		/// </summary>
-		public override void Dispose()
+		// Vanara 5.x 以降 ShellItem.Dispose は virtual ではなく `new` で隠蔽する。
+		public new void Dispose()
 		{
 			_lib = null;
 

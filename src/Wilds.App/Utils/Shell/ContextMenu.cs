@@ -330,7 +330,8 @@ namespace Wilds.App.Utils.Shell
 			try
 			{
 				commandString = new SafeCoTaskMemString(512);
-				cMenu.GetCommandString(new IntPtr(offset), flags, IntPtr.Zero, commandString, (uint)commandString.Capacity - 1);
+				// Vanara 5.x で第 1 引数が UIntPtr に変更された。
+				cMenu.GetCommandString(new UIntPtr(offset), flags, IntPtr.Zero, commandString, (uint)commandString.Capacity - 1);
 				Debug.WriteLine("Verb {0}: {1}", offset, commandString);
 
 				return commandString.ToString();

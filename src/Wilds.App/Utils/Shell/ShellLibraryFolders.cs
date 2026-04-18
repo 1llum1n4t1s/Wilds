@@ -78,11 +78,13 @@ namespace Wilds.App.Utils.Shell
 		/// Performs application-defined tasks associated with freeing,
 		/// releasing, or resetting unmanaged resources.
 		/// </summary>
-		public override void Dispose()
+		// Vanara 5.x 以降 Dispose は virtual ではなく `new` で隠蔽する。
+		// base 側は Dispose(bool disposing) を要求するため明示的に true を渡す。
+		public new void Dispose()
 		{
 			_lib = null;
 
-			base.Dispose();
+			base.Dispose(true);
 			GC.SuppressFinalize(this);
 		}
 	}

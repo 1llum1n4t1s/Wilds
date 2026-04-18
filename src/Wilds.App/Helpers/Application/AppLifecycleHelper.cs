@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
 using Sentry;
 using Sentry.Protocol;
+using SuperLightLogger;
 using System.IO;
 using System.Text;
 using Windows.ApplicationModel;
@@ -199,7 +200,13 @@ namespace Wilds.App.Helpers
 					.ClearProviders()
 					.AddConsole()
 					.AddDebug()
-					.AddProvider(new FileLoggerProvider(Path.Combine(AppPaths.LocalFolderPath, "debug.log")))
+					.AddSuperLightFile(opt =>
+					{
+						opt.FileName = Path.Combine(AppPaths.LocalFolderPath, "debug.log");
+						opt.Async = true;
+						opt.ArchiveAboveSize = 5L * 1024 * 1024;
+						opt.MaxArchiveFiles = 5;
+					})
 					.AddProvider(new SentryLoggerProvider())
 					.SetMinimumLevel(LogLevel.Information))
 				.ConfigureServices(services => services

@@ -51,7 +51,8 @@ namespace Wilds.App.Extensions
 		/// It is initialized with the options to use cache and the two-letter ISO language name of the current UI culture,
 		/// and a custom value formatter for number values.
 		/// </summary>
-		private static readonly MessageFormatter _formatter = new(useCache: false, locale: _locale.TwoLetterISOLanguageName, customValueFormatter: _customFormatter);
+		// MessageFormat 8.x: locale → culture にパラメータ名変更、型も CultureInfo に変更。
+		private static readonly MessageFormatter _formatter = new(useCache: false, culture: _locale, customValueFormatter: _customFormatter);
 
 		/// <summary>
 		/// Creates a dictionary for format pairs with a string key.
