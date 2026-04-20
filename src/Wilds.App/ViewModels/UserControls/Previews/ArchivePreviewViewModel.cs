@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using Wilds.App.ViewModels.Properties;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.IO;
 
 namespace Wilds.App.ViewModels.Previews
@@ -18,44 +18,44 @@ namespace Wilds.App.ViewModels.Previews
 		{
 			var details = new List<FileProperty>();
 
-			using SevenZipExtractor zipFile = await FilesystemTasks.Wrap(async () =>
+			using ArchiveReader zipFile = await FilesystemTasks.Wrap(async () =>
 			{
-				var arch = new SevenZipExtractor(await Item.ItemFile.OpenStreamForReadAsync());
+				// Why (P2-18): ItemFile や OpenStreamForReadAsync が null を返す経路で NRE になる。
+				// null ガードで安全に null 返却し、呼び出し元 (Wrap) がサムネイルへフォールバックする。
+				if (Item?.ItemFile is null) return null;
+				var stream = await Item.ItemFile.OpenStreamForReadAsync();
+				if (stream is null) return null;
 
-				// Force load archive (1665013614u)
-				return arch?.ArchiveFileData is null ? null : arch;
+				var arch = new ArchiveReader(stream, leaveOpen: false);
+				// Items プロパティアクセスで遅延ロードを強制評価する。
+				return arch?.Items is null ? null : arch;
 			});
 
 			if (zipFile is null)
 			{
-				// Loads the thumbnail preview
 				_ = await base.LoadPreviewAndDetailsAsync();
-
 				return details;
 			}
 
-			//zipFile.IsStreamOwner = true;
-
 			var folderCount = 0;
 			var fileCount = 0;
-			ulong totalSize = 0;
+			long totalSize = 0;
 
-			foreach (ArchiveFileInfo entry in zipFile.ArchiveFileData)
+			foreach (var entry in zipFile.Items)
 			{
 				if (!entry.IsDirectory)
 				{
 					++fileCount;
-					totalSize += entry.Size;
+					totalSize += entry.Length;
 				}
 			}
 
-			folderCount = (int)zipFile.FilesCount - fileCount;
+			folderCount = zipFile.Items.Count - fileCount;
 
-			string propertyItemCount = Strings.DetailsArchiveItems.GetLocalizedFormatResource(zipFile.FilesCount, fileCount, folderCount);
+			string propertyItemCount = Strings.DetailsArchiveItems.GetLocalizedFormatResource((uint)zipFile.Items.Count, fileCount, folderCount);
 			details.Add(GetFileProperty("PropertyItemCount", propertyItemCount));
-			details.Add(GetFileProperty("PropertyUncompressedSize", totalSize.ToLongSizeString()));
+			details.Add(GetFileProperty("PropertyUncompressedSize", ((ulong)totalSize).ToLongSizeString()));
 
-			// Loads the thumbnail preview
 			_ = await base.LoadPreviewAndDetailsAsync();
 			return details;
 		}

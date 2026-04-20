@@ -64,7 +64,7 @@ namespace Wilds.App.Data.Enums
 		Dvd8128,
 
 		/// <summary>
-		/// Split into each 22.5 GB - Blu-ray.
+		/// Split into each 23,040 MB (~23.04 GB, SI) - Blu-ray. 7-Zip UI と同表記。
 		/// </summary>
 		Bd23040
 	}

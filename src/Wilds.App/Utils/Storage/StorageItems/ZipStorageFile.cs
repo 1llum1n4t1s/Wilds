@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 using Wilds.Shared.Helpers;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.IO;
 using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Foundation;
@@ -18,6 +18,11 @@ namespace Wilds.App.Utils.Storage
 	{
 		private readonly string containerPath;
 		private readonly BaseStorageFile backingFile;
+
+		// Why (P1-1): コンストラクタで ArchiveEntity を受け取ったときに Index をキャッシュすれば、
+		// OpenAsync/RenameAsync/DeleteAsync 等で毎回 ArchiveReader を開いて Items 全走査する
+		// 必要がなくなる (7 箇所で O(N) アロケーションしていた)。
+		private int _cachedIndex = -1;
 
 		public override string Path { get; }
 		public override string Name { get; }
@@ -57,9 +62,12 @@ namespace Wilds.App.Utils.Storage
 		}
 		public ZipStorageFile(string path, string containerPath, BaseStorageFile backingFile) : this(path, containerPath)
 			=> this.backingFile = backingFile;
-		public ZipStorageFile(string path, string containerPath, ArchiveFileInfo entry) : this(path, containerPath)
-			=> DateCreated = entry.CreationTime == DateTime.MinValue ? DateTimeOffset.MinValue : entry.CreationTime;
-		public ZipStorageFile(string path, string containerPath, ArchiveFileInfo entry, BaseStorageFile backingFile) : this(path, containerPath, entry)
+		public ZipStorageFile(string path, string containerPath, ArchiveEntity entry) : this(path, containerPath)
+		{
+			DateCreated = entry.CreationTime == DateTime.MinValue ? DateTimeOffset.MinValue : entry.CreationTime;
+			_cachedIndex = entry.Index;
+		}
+		public ZipStorageFile(string path, string containerPath, ArchiveEntity entry, BaseStorageFile backingFile) : this(path, containerPath, entry)
 			=> this.backingFile = backingFile;
 
 		public override IAsyncOperation<StorageFile> ToStorageFileAsync()
@@ -111,26 +119,21 @@ namespace Wilds.App.Utils.Storage
 
 				if (!rw)
 				{
-					SevenZipExtractor zipFile = await OpenZipFileAsync();
-					if (zipFile is null || zipFile.ArchiveFileData is null)
-					{
+					ArchiveReader reader = await OpenArchiveReaderAsync();
+					if (reader is null || reader.Items is null)
 						return null;
-					}
 
-					//zipFile.IsStreamOwner = true;
-					var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
+					var entry = ResolveEntry(reader);
+					if (entry is null)
+						return null;
 
-					if (entry.FileName is not null)
+					var ms = new MemoryStream();
+					await Task.Run(() => reader.Extract(entry.Index, ms));
+					ms.Position = 0;
+					return new NonSeekableRandomAccessStreamForRead(ms, (ulong)entry.Length)
 					{
-						var ms = new MemoryStream();
-						await zipFile.ExtractFileAsync(entry.Index, ms);
-						ms.Position = 0;
-						return new NonSeekableRandomAccessStreamForRead(ms, entry.Size)
-						{
-							DisposeCallback = () => zipFile.Dispose()
-						};
-					}
-					return null;
+						DisposeCallback = () => reader.Dispose()
+					};
 				}
 
 				throw new NotSupportedException("Can't open zip file as RW");
@@ -146,33 +149,26 @@ namespace Wilds.App.Utils.Storage
 				if (Path == containerPath)
 				{
 					if (backingFile is not null)
-					{
 						return await backingFile.OpenReadAsync();
-					}
 
 					var hFile = Win32Helper.OpenFileForRead(containerPath);
 					return hFile.IsInvalid ? null : new StreamWithContentType(new FileStream(hFile, FileAccess.Read).AsRandomAccessStream());
 				}
 
-				SevenZipExtractor zipFile = await OpenZipFileAsync();
-				if (zipFile is null || zipFile.ArchiveFileData is null)
-				{
+				ArchiveReader reader = await OpenArchiveReaderAsync();
+				if (reader is null || reader.Items is null)
 					return null;
-				}
 
-				//zipFile.IsStreamOwner = true;
-				var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-				if (entry.FileName is null)
-				{
+				var entry = ResolveEntry(reader);
+				if (entry is null)
 					return null;
-				}
 
 				var ms = new MemoryStream();
-				await zipFile.ExtractFileAsync(entry.Index, ms);
+				await Task.Run(() => reader.Extract(entry.Index, ms));
 				ms.Position = 0;
-				var nsStream = new NonSeekableRandomAccessStreamForRead(ms, entry.Size)
+				var nsStream = new NonSeekableRandomAccessStreamForRead(ms, (ulong)entry.Length)
 				{
-					DisposeCallback = () => zipFile.Dispose()
+					DisposeCallback = () => reader.Dispose()
 				};
 				return new StreamWithContentType(nsStream);
 			}, ((IPasswordProtectedItem)this).RetryWithCredentialsAsync));
@@ -185,32 +181,26 @@ namespace Wilds.App.Utils.Storage
 				if (Path == containerPath)
 				{
 					if (backingFile is not null)
-					{
 						return await backingFile.OpenSequentialReadAsync();
-					}
 
 					var hFile = Win32Helper.OpenFileForRead(containerPath);
 					return hFile.IsInvalid ? null : new FileStream(hFile, FileAccess.Read).AsInputStream();
 				}
 
-				SevenZipExtractor zipFile = await OpenZipFileAsync();
-				if (zipFile is null || zipFile.ArchiveFileData is null)
-				{
+				ArchiveReader reader = await OpenArchiveReaderAsync();
+				if (reader is null || reader.Items is null)
 					return null;
-				}
-				//zipFile.IsStreamOwner = true;
-				var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-				if (entry.FileName is null)
-				{
+
+				var entry = ResolveEntry(reader);
+				if (entry is null)
 					return null;
-				}
 
 				var ms = new MemoryStream();
-				await zipFile.ExtractFileAsync(entry.Index, ms);
+				await Task.Run(() => reader.Extract(entry.Index, ms));
 				ms.Position = 0;
-				return new NonSeekableRandomAccessStreamForRead(ms, entry.Size)
+				return new NonSeekableRandomAccessStreamForRead(ms, (ulong)entry.Length)
 				{
-					DisposeCallback = () => zipFile.Dispose()
+					DisposeCallback = () => reader.Dispose()
 				};
 			}, ((IPasswordProtectedItem)this).RetryWithCredentialsAsync));
 		}
@@ -228,34 +218,29 @@ namespace Wilds.App.Utils.Storage
 		{
 			return AsyncInfo.Run((cancellationToken) => SafetyExtensions.Wrap<BaseStorageFile>(async () =>
 			{
-				using SevenZipExtractor zipFile = await OpenZipFileAsync();
-				if (zipFile is null || zipFile.ArchiveFileData is null)
-				{
+				using ArchiveReader reader = await OpenArchiveReaderAsync();
+				if (reader is null || reader.Items is null)
 					return null;
-				}
 
-				//zipFile.IsStreamOwner = true;
-				var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-				if (entry.FileName is null)
-				{
+				var entry = ResolveEntry(reader);
+				if (entry is null)
 					return null;
-				}
 
 				var destFolder = destinationFolder.AsBaseStorageFolder();
 
 				if (destFolder is ICreateFileWithStream cwsf)
 				{
 					var ms = new MemoryStream();
-					await zipFile.ExtractFileAsync(entry.Index, ms);
+					await Task.Run(() => reader.Extract(entry.Index, ms));
 					ms.Position = 0;
-					using var inStream = new NonSeekableRandomAccessStreamForRead(ms, entry.Size);
+					using var inStream = new NonSeekableRandomAccessStreamForRead(ms, (ulong)entry.Length);
 					return await cwsf.CreateFileAsync(inStream.AsStreamForRead(), desiredNewName, option.Convert());
 				}
 				else
 				{
 					var destFile = await destFolder.CreateFileAsync(desiredNewName, option.Convert());
 					await using var outStream = await destFile.OpenStreamForWriteAsync();
-					await SafetyExtensions.WrapAsync(() => zipFile.ExtractFileAsync(entry.Index, outStream), async (_, exception) =>
+					await SafetyExtensions.WrapAsync(() => Task.Run(() => reader.Extract(entry.Index, outStream)), async (_, exception) =>
 					{
 						await destFile.DeleteAsync();
 						throw exception;
@@ -268,22 +253,18 @@ namespace Wilds.App.Utils.Storage
 		{
 			return AsyncInfo.Run((cancellationToken) => SafetyExtensions.WrapAsync(async () =>
 			{
-				using SevenZipExtractor zipFile = await OpenZipFileAsync();
-				if (zipFile is null || zipFile.ArchiveFileData is null)
-				{
+				using ArchiveReader reader = await OpenArchiveReaderAsync();
+				if (reader is null || reader.Items is null)
 					return;
-				}
-				//zipFile.IsStreamOwner = true;
-				var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-				if (entry.FileName is null)
-				{
+
+				var entry = ResolveEntry(reader);
+				if (entry is null)
 					return;
-				}
 
 				using var hDestFile = fileToReplace.CreateSafeFileHandle(FileAccess.ReadWrite);
 				await using (var outStream = new FileStream(hDestFile, FileAccess.Write))
 				{
-					await zipFile.ExtractFileAsync(entry.Index, outStream);
+					await Task.Run(() => reader.Extract(entry.Index, outStream));
 				}
 			}, ((IPasswordProtectedItem)this).RetryWithCredentialsAsync));
 		}
@@ -317,29 +298,18 @@ namespace Wilds.App.Utils.Storage
 				else
 				{
 					var index = await FetchZipIndex();
-					if (index < 0)
-					{
-						return;
-					}
-					using (var ms = new MemoryStream())
-					{
-						await using (var archiveStream = await OpenZipFileAsync(FileAccessMode.Read))
-						{
-							SevenZipCompressor compressor = new SevenZipCompressor() { CompressionMode = CompressionMode.Append };
-							compressor.CustomParameters.Add("cu", "on");
-							compressor.SetFormatFromExistingArchive(archiveStream);
-							var fileName = IO.Path.GetRelativePath(containerPath, IO.Path.Combine(IO.Path.GetDirectoryName(Path), desiredName));
-							await compressor.ModifyArchiveAsync(archiveStream, new Dictionary<int, string>() { { index, fileName } }, Credentials.Password, ms);
-						}
+					if (index < 0) return;
 
-						await using (var archiveStream = await OpenZipFileAsync(FileAccessMode.ReadWrite))
-						{
-							ms.Position = 0;
-							await ms.CopyToAsync(archiveStream);
-							await ms.FlushAsync();
-							archiveStream.SetLength(archiveStream.Position);
-						}
-					}
+					var fileName = IO.Path.GetRelativePath(containerPath, IO.Path.Combine(IO.Path.GetDirectoryName(Path), desiredName));
+					var renameMap = new Dictionary<int, string> { [index] = fileName };
+
+					// Why (P0-1/P0-8): atomic rename + DRY 抽出されたヘルパー経由で更新する。
+					await ArchiveUpdateHelper.CommitUpdateAsync(
+						containerPath,
+						backingFile,
+						Credentials.Password,
+						configureWriter: null,
+						renameMap: renameMap);
 				}
 			}, ((IPasswordProtectedItem)this).RetryWithCredentialsAsync));
 		}
@@ -367,27 +337,17 @@ namespace Wilds.App.Utils.Storage
 				else
 				{
 					var index = await FetchZipIndex();
-					if (index < 0)
-					{
-						return;
-					}
-					using (var ms = new MemoryStream())
-					{
-						await using (var archiveStream = await OpenZipFileAsync(FileAccessMode.Read))
-						{
-							SevenZipCompressor compressor = new SevenZipCompressor() { CompressionMode = CompressionMode.Append };
-							compressor.CustomParameters.Add("cu", "on");
-							compressor.SetFormatFromExistingArchive(archiveStream);
-							await compressor.ModifyArchiveAsync(archiveStream, new Dictionary<int, string>() { { index, null } }, Credentials.Password, ms);
-						}
-						await using (var archiveStream = await OpenZipFileAsync(FileAccessMode.ReadWrite))
-						{
-							ms.Position = 0;
-							await ms.CopyToAsync(archiveStream);
-							await ms.FlushAsync();
-							archiveStream.SetLength(archiveStream.Position);
-						}
-					}
+					if (index < 0) return;
+
+					// value=null → Cube 側で削除扱い (UpdatePlan.cs 仕様)
+					var renameMap = new Dictionary<int, string> { [index] = null! };
+
+					await ArchiveUpdateHelper.CommitUpdateAsync(
+						containerPath,
+						backingFile,
+						Credentials.Password,
+						configureWriter: null,
+						renameMap: renameMap);
 				}
 			}, ((IPasswordProtectedItem)this).RetryWithCredentialsAsync));
 		}
@@ -405,65 +365,66 @@ namespace Wilds.App.Utils.Storage
 			{
 				var hFile = Win32Helper.OpenFileForRead(path);
 				if (hFile.IsInvalid)
-				{
 					return false;
-				}
-				using (SevenZipExtractor zipFile = new SevenZipExtractor(new FileStream(hFile, FileAccess.Read)))
+
+				using (ArchiveReader reader = new ArchiveReader(new FileStream(hFile, FileAccess.Read), leaveOpen: false))
 				{
-					//zipFile.IsStreamOwner = true;
-					return zipFile.ArchiveFileData is not null;
+					return reader.Items is not null;
 				}
 			}
-			catch (SevenZipOpenFailedException ex)
+			catch (EncryptionException)
 			{
-				return ex.Result == OperationResult.WrongPassword;
+				// Why (P2-2): 暗号化アーカイブは「認識可能 + 後でパスワード要求」として true を返す。
+				return true;
 			}
-			catch
-			{
-				return false;
-			}
+			catch (FileNotFoundException) { return false; }
+			catch (UnauthorizedAccessException) { return false; }
+			catch { return false; }
 		}
 
 		private async Task<int> FetchZipIndex()
 		{
-			using (SevenZipExtractor zipFile = await OpenZipFileAsync())
+			// Why (P1-1): キャッシュ済みなら再 Open 不要。
+			if (_cachedIndex >= 0) return _cachedIndex;
+
+			using (ArchiveReader reader = await OpenArchiveReaderAsync())
 			{
-				if (zipFile is null || zipFile.ArchiveFileData is null)
-				{
-					return -1;
-				}
-				//zipFile.IsStreamOwner = true;
-				var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-				if (entry.FileName is not null)
-				{
-					return entry.Index;
-				}
-				return -1;
+				if (reader is null || reader.Items is null) return -1;
+				var entry = ResolveEntry(reader);
+				return entry is not null ? entry.Index : -1;
 			}
+		}
+
+		/// <summary>
+		/// 現在の Path に対応する ArchiveEntity を解決する。キャッシュ済み Index があればそれを優先。
+		/// </summary>
+		private ArchiveEntity? ResolveEntry(ArchiveReader reader)
+		{
+			if (_cachedIndex >= 0 && _cachedIndex < reader.Items.Count)
+				return reader.Items[_cachedIndex];
+
+			var entry = reader.Items.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FullName) == Path);
+			if (entry is not null) _cachedIndex = entry.Index;
+			return entry;
 		}
 
 		private async Task<BaseBasicProperties> GetBasicProperties()
 		{
-			using SevenZipExtractor zipFile = await OpenZipFileAsync();
-			if (zipFile is null || zipFile.ArchiveFileData is null)
-			{
-				return null;
-			}
+			using ArchiveReader reader = await OpenArchiveReaderAsync();
+			if (reader is null || reader.Items is null) return null;
 
-			//zipFile.IsStreamOwner = true;
-			var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == Path);
-
-			return entry.FileName is null
+			var entry = ResolveEntry(reader);
+			return entry is null
 				? new BaseBasicProperties()
 				: new ZipFileBasicProperties(entry);
 		}
 
-		private IAsyncOperation<SevenZipExtractor> OpenZipFileAsync()
+		private IAsyncOperation<ArchiveReader> OpenArchiveReaderAsync()
 		{
-			return AsyncInfo.Run<SevenZipExtractor>(async (cancellationToken) =>
+			return AsyncInfo.Run<ArchiveReader>(async (cancellationToken) =>
 			{
-				var zipFile = await OpenZipFileAsync(FileAccessMode.Read);
-				return zipFile is not null ? new SevenZipExtractor(zipFile, Credentials.Password) : null;
+				var stream = await OpenZipFileAsync(FileAccessMode.Read);
+				return stream is not null ? new ArchiveReader(stream, Credentials.Password ?? string.Empty, leaveOpen: false) : null;
 			});
 		}
 
@@ -479,10 +440,7 @@ namespace Wilds.App.Utils.Storage
 				else
 				{
 					var hFile = Win32Helper.OpenFileForRead(containerPath, readWrite);
-					if (hFile.IsInvalid)
-					{
-						return null;
-					}
+					if (hFile.IsInvalid) return null;
 					return new FileStream(hFile, readWrite ? FileAccess.ReadWrite : FileAccess.Read);
 				}
 			});
@@ -494,15 +452,15 @@ namespace Wilds.App.Utils.Storage
 			{
 				try
 				{
-					using SevenZipExtractor zipFile = await OpenZipFileAsync();
-					if (zipFile is null || zipFile.ArchiveFileData is null)
+					using ArchiveReader reader = await OpenArchiveReaderAsync();
+					if (reader is null || reader.Items is null)
 					{
 						request.FailAndClose(StreamedFileFailureMode.CurrentlyUnavailable);
 						return;
 					}
-					//zipFile.IsStreamOwner = true;
-					var entry = zipFile.ArchiveFileData.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FileName) == name);
-					if (entry.FileName is null)
+
+					var entry = ResolveEntry(reader);
+					if (entry is null)
 					{
 						request.FailAndClose(StreamedFileFailureMode.CurrentlyUnavailable);
 					}
@@ -510,7 +468,7 @@ namespace Wilds.App.Utils.Storage
 					{
 						await using (var outStream = request.AsStreamForWrite())
 						{
-							await zipFile.ExtractFileAsync(entry.Index, outStream);
+							await Task.Run(() => reader.Extract(entry.Index, outStream));
 						}
 						request.Dispose();
 					}
@@ -524,15 +482,15 @@ namespace Wilds.App.Utils.Storage
 
 		private sealed partial class ZipFileBasicProperties : BaseBasicProperties
 		{
-			private ArchiveFileInfo entry;
+			private ArchiveEntity entry;
 
-			public ZipFileBasicProperties(ArchiveFileInfo entry) => this.entry = entry;
+			public ZipFileBasicProperties(ArchiveEntity entry) => this.entry = entry;
 
 			public override DateTimeOffset DateModified => entry.LastWriteTime == DateTime.MinValue ? DateTimeOffset.MinValue : entry.LastWriteTime;
 
 			public override DateTimeOffset DateCreated => entry.CreationTime == DateTime.MinValue ? DateTimeOffset.MinValue : entry.CreationTime;
 
-			public override ulong Size => entry.Size;
+			public override ulong Size => (ulong)entry.Length;
 		}
 	}
 }

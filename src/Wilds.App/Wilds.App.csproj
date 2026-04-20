@@ -74,8 +74,7 @@
         <PackageReference Include="Microsoft.Xaml.Behaviors.WinUI.Managed" />
         <PackageReference Include="Sentry" />
         <PackageReference Include="SuperLightLogger" />
-        <PackageReference Include="SevenZipSharp" />
-        <PackageReference Include="SharpZipLib" />
+        <PackageReference Include="1llum1n4t1s.Sevenzip" />
         <PackageReference Include="SQLitePCLRaw.bundle_green" />
         <PackageReference Include="Microsoft.WindowsAppSDK" />
         <PackageReference Include="Microsoft.Graphics.Win2D" />

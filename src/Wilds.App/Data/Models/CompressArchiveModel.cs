@@ -1,9 +1,9 @@
-﻿// Copyright (c) Files Community
+// Copyright (c) Files Community
 // Licensed under the MIT License.
 
 using Wilds.App.Utils.Storage.Operations;
 using Microsoft.Extensions.Logging;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.IO;
 
 namespace Wilds.App.Data.Models
@@ -19,6 +19,10 @@ namespace Wilds.App.Data.Models
 
 		private IThreadingService _threadingService = Ioc.Default.GetRequiredService<IThreadingService>();
 
+		// Why (P1-5): per-file コールバックは高頻度で発火するので UI dispatch を間引く。
+		private const long MinUiDispatchIntervalMs = 16;
+		private long _lastDispatchMs;
+
 		private string ArchiveExtension => FileFormat switch
 		{
 			ArchiveFormats.Zip => ".zip",
@@ -28,27 +32,27 @@ namespace Wilds.App.Data.Models
 			_ => throw new ArgumentOutOfRangeException(nameof(FileFormat)),
 		};
 
-		private OutArchiveFormat SevenZipArchiveFormat => FileFormat switch
+		private Format ResolveFormat => FileFormat switch
 		{
-			ArchiveFormats.Zip => OutArchiveFormat.Zip,
-			ArchiveFormats.SevenZip => OutArchiveFormat.SevenZip,
-			ArchiveFormats.Tar => OutArchiveFormat.Tar,
-			ArchiveFormats.GZip => OutArchiveFormat.GZip,
+			ArchiveFormats.Zip => Format.Zip,
+			ArchiveFormats.SevenZip => Format.SevenZip,
+			ArchiveFormats.Tar => Format.Tar,
+			ArchiveFormats.GZip => Format.GZip,
 			_ => throw new ArgumentOutOfRangeException(nameof(FileFormat)),
 		};
 
-		private CompressionLevel SevenZipCompressionLevel => CompressionLevel switch
+		private Cube.FileSystem.SevenZip.CompressionLevel ResolveCompressionLevel => CompressionLevel switch
 		{
-			ArchiveCompressionLevels.Ultra => SevenZip.CompressionLevel.Ultra,
-			ArchiveCompressionLevels.High => SevenZip.CompressionLevel.High,
-			ArchiveCompressionLevels.Normal => SevenZip.CompressionLevel.Normal,
-			ArchiveCompressionLevels.Low => SevenZip.CompressionLevel.Low,
-			ArchiveCompressionLevels.Fast => SevenZip.CompressionLevel.Fast,
-			ArchiveCompressionLevels.None => SevenZip.CompressionLevel.None,
+			ArchiveCompressionLevels.Ultra => Cube.FileSystem.SevenZip.CompressionLevel.Ultra,
+			ArchiveCompressionLevels.High => Cube.FileSystem.SevenZip.CompressionLevel.High,
+			ArchiveCompressionLevels.Normal => Cube.FileSystem.SevenZip.CompressionLevel.Normal,
+			ArchiveCompressionLevels.Low => Cube.FileSystem.SevenZip.CompressionLevel.Low,
+			ArchiveCompressionLevels.Fast => Cube.FileSystem.SevenZip.CompressionLevel.Fast,
+			ArchiveCompressionLevels.None => Cube.FileSystem.SevenZip.CompressionLevel.None,
 			_ => throw new ArgumentOutOfRangeException(nameof(CompressionLevel)),
 		};
 
-		private long SevenZipVolumeSize => SplittingSize switch
+		private long ResolveVolumeSize => SplittingSize switch
 		{
 			ArchiveSplittingSizes.None => 0L,
 			ArchiveSplittingSizes.Mo10 => 10 * 1000 * 1000L,
@@ -66,18 +70,21 @@ namespace Wilds.App.Data.Models
 		};
 
 		private IProgress<StatusCenterItemProgressModel> _Progress;
+		private bool _progressBound;
+
 		public IProgress<StatusCenterItemProgressModel> Progress
 		{
 			get => _Progress;
 			set
 			{
+				// Why (P2-10): Progress は一度だけ束縛するワンタイム setter。
+				// 複数回 set されると _fileSystemProgress が差し替わり、進捗ハンドラが race を起こす。
+				if (_progressBound)
+					throw new InvalidOperationException("Progress は一度しか設定できません。インスタンスを新規に生成してください。");
+
+				_progressBound = true;
 				_Progress = value;
-
-				_fileSystemProgress = new(
-					Progress,
-					false,
-					FileSystemStatusCode.InProgress);
-
+				_fileSystemProgress = new(value, false, FileSystemStatusCode.InProgress);
 				_fileSystemProgress.Report(0);
 			}
 		}
@@ -156,46 +163,52 @@ namespace Wilds.App.Data.Models
 		{
 			string[] sources = Sources.ToArray();
 
-			var compressor = new SevenZipCompressor()
+			var customParams = new Dictionary<string, string>
 			{
-				ArchiveFormat = SevenZipArchiveFormat,
-				CompressionLevel = SevenZipCompressionLevel,
-				VolumeSize = FileFormat is ArchiveFormats.SevenZip ? SevenZipVolumeSize : 0,
-				FastCompression = false,
-				IncludeEmptyDirectories = true,
-				EncryptHeaders = true,
-				PreserveDirectoryRoot = sources.Length > 1,
+				["mt"] = CPUThreads.ToString(),
 			};
-
-			compressor.CustomParameters.Add("mt", CPUThreads.ToString());
-			// Use UTF-8 encoding. 
-			// References: 7-zip chm --> Command Line Version --> Switches
-			// --> -m --> cu=[off | on].
-			// Don't add "cu" parameter for 7zip files, see https://github.com/1llum1n4t1s/Wilds/issues
+			// UTF-8 ファイル名: 7z では付けない (1llum1n4t1s/Wilds issues 参照)
 			if (FileFormat != ArchiveFormats.SevenZip)
-				compressor.CustomParameters.Add("cu", "on");
+				customParams["cu"] = "on";
 
 			if (FileFormat is ArchiveFormats.SevenZip)
 			{
 				var dictParam = GetDictionarySizeParam();
 				if (dictParam is not null)
-					compressor.CustomParameters.Add("d", dictParam);
+					customParams["d"] = dictParam;
 
 				var wordParam = GetWordSizeParam();
 				if (wordParam is not null)
-					compressor.CustomParameters.Add("fb", wordParam);
+					customParams["fb"] = wordParam;
 			}
 
-			compressor.Compressing += Compressor_Compressing;
-			compressor.FileCompressionStarted += Compressor_FileCompressionStarted;
-			compressor.FileCompressionFinished += Compressor_FileCompressionFinished;
+			// Why (P0-5): Zip 形式で password ありなら明示的に AES-256 を指定する。
+			// 既定 (EncryptionMethod.Default) は弱い ZipCrypto にフォールバックする可能性がある。
+			var encryptionMethod = (FileFormat == ArchiveFormats.Zip && !string.IsNullOrEmpty(Password))
+				? EncryptionMethod.Aes256
+				: EncryptionMethod.Default;
+
+			var options = new CompressionOption
+			{
+				CompressionLevel = ResolveCompressionLevel,
+				VolumeSize = FileFormat is ArchiveFormats.SevenZip ? ResolveVolumeSize : 0,
+				IncludeEmptyDirectories = true,
+				Password = Password ?? string.Empty,
+				EncryptionMethod = encryptionMethod,
+				CustomParameters = customParams,
+				ThreadCount = CPUThreads,
+			};
+
+			using var compressor = new ArchiveWriter(ResolveFormat, options);
+			compressor.FileCompressing += Compressor_FileCompressionStarted;
+			compressor.FileCompressed += Compressor_FileCompressionFinished;
 
 			var cts = new CancellationTokenSource();
 
 			try
 			{
 				var files = sources.Where(File.Exists).ToArray();
-				var directories = sources.Where(SystemIO.Directory.Exists);
+				var directories = sources.Where(SystemIO.Directory.Exists).ToArray();
 
 				_sizeCalculator = new FileSizeCalculator([.. files, .. directories]);
 				var sizeTask = _sizeCalculator.ComputeSizeAsync(cts.Token);
@@ -207,87 +220,62 @@ namespace Wilds.App.Data.Models
 					_fileSystemProgress.Report();
 				});
 
-				foreach (string directory in directories)
-				{
-					try
-					{
-						await compressor.CompressDirectoryAsync(directory, ArchivePath, Password);
-					}
-					catch (SevenZipInvalidFileNamesException)
-					{
-						// The directory has no files, so we need to create entries manually
-						var fileDictionary = new Dictionary<string, string>();
-						AddEntry(fileDictionary, directory, "");
+				foreach (var directory in directories)
+					compressor.Add(directory);
 
-						compressor.CompressFileDictionary(fileDictionary, ArchivePath, Password);
+				foreach (var file in files)
+					compressor.Add(file);
 
-						static void AddEntry(IDictionary<string, string> fileDictionary, string directory, string entryPrefix)
-						{
-							DirectoryInfo directoryInfo = new DirectoryInfo(directory);
-
-							DirectoryInfo[] directories = directoryInfo.GetDirectories();
-							if (directories.Length == 0)
-							{
-								fileDictionary.Add(entryPrefix + directoryInfo.Name, null);
-							}
-							else
-							{
-								entryPrefix += directoryInfo.Name + Path.DirectorySeparatorChar;
-								foreach (DirectoryInfo directoryInfo2 in directories)
-									AddEntry(fileDictionary, directoryInfo2.FullName, entryPrefix);
-							}
-						}
-					}
-
-					compressor.CompressionMode = CompressionMode.Append;
-				}
-
-				if (files.Any())
-				{
-					if (string.IsNullOrEmpty(Password))
-						await compressor.CompressFilesAsync(ArchivePath, files);
-					else
-						await compressor.CompressFilesEncryptedAsync(ArchivePath, Password, files);
-				}
+				var progress = new Progress<Report>(Compressor_Compressing);
+				await Task.Run(() => compressor.Save(ArchivePath, progress));
 
 				cts.Cancel();
-
 				return true;
 			}
 			catch (Exception ex)
 			{
 				var logger = Ioc.Default.GetRequiredService<ILogger<App>>();
-				logger?.LogWarning(ex, $"Error compressing folder: {ArchivePath}");
-
+				// Why (P2-12): ex.Message は password を含む可能性があるので型名のみ。
+				logger?.LogWarning("Error compressing folder: {ArchivePath} ({ExceptionType})", ArchivePath, ex.GetType().Name);
 				cts.Cancel();
-
 				return false;
 			}
 		}
 
-		private void Compressor_FileCompressionStarted(object? sender, FileNameEventArgs e)
+		private void Compressor_FileCompressionStarted(object? sender, ArchiveFileEventArgs e)
 		{
 			if (CancellationToken.IsCancellationRequested)
+			{
 				e.Cancel = true;
-			else
-				_sizeCalculator.ForceComputeFileSize(e.FilePath);
+				return;
+			}
+
+			var fullName = e.Target?.FullName;
+			if (!string.IsNullOrEmpty(fullName))
+				_sizeCalculator.ForceComputeFileSize(fullName);
+
+			// Why (P1-5): 高頻度 dispatch を 16ms でスロットル。数万ファイルで UI キュー飽和を防ぐ。
+			var nowMs = Environment.TickCount64;
+			if (nowMs - _lastDispatchMs < MinUiDispatchIntervalMs) return;
+			_lastDispatchMs = nowMs;
+
 			_threadingService.ExecuteOnUiThreadAsync(() =>
 			{
-				_fileSystemProgress.FileName = e.FileName;
+				_fileSystemProgress.FileName = e.Target?.Name ?? string.Empty;
 				_fileSystemProgress.Report();
 			});
 		}
 
-		private void Compressor_FileCompressionFinished(object? sender, EventArgs e)
+		private void Compressor_FileCompressionFinished(object? sender, ArchiveFileEventArgs e)
 		{
 			_fileSystemProgress.AddProcessedItemsCount(1);
 			_fileSystemProgress.Report();
 		}
 
-		private void Compressor_Compressing(object? _, ProgressEventArgs e)
+		private void Compressor_Compressing(Report r)
 		{
-			if (_fileSystemProgress.TotalSize > 0)
-				_fileSystemProgress.Report((_fileSystemProgress.ProcessedSize + e.PercentDelta / 100.0 * e.BytesCount) / _fileSystemProgress.TotalSize * 100);
+			if (_fileSystemProgress.TotalSize > 0 && r.TotalBytes > 0)
+				_fileSystemProgress.Report((double)r.Bytes / r.TotalBytes * 100);
 		}
 
 		private string? GetDictionarySizeParam() => DictionarySize switch

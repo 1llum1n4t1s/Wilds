@@ -74,8 +74,16 @@ namespace Wilds.App.Actions
 			if (option != ContentDialogResult.Primary)
 				return;
 
-			if (isArchiveEncrypted && decompressArchiveViewModel.Password is not null)
-				password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+			try
+			{
+				if (isArchiveEncrypted && decompressArchiveViewModel.Password is not null)
+					password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+			}
+			finally
+			{
+				// Why: byte[] → string 変換後のゼロ埋め必須。GC 回収までの平文残存を防ぐ。
+				decompressArchiveViewModel.Password?.Dispose();
+			}
 
 			encoding = decompressArchiveViewModel.SelectedEncoding.Encoding;
 

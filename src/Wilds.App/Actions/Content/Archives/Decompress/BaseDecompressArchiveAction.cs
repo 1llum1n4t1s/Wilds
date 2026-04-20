@@ -3,7 +3,7 @@
 
 using Wilds.App.Dialogs;
 using Microsoft.UI.Xaml.Controls;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.Text;
 using Windows.Foundation.Metadata;
 using Windows.Storage;
@@ -82,25 +82,33 @@ namespace Wilds.App.Actions
 					if (option != ContentDialogResult.Primary)
 						return;
 
-					if (decompressArchiveViewModel.Password is not null)
-						password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+					try
+					{
+						if (decompressArchiveViewModel.Password is not null)
+							password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+					}
+					finally
+					{
+						decompressArchiveViewModel.Password?.Dispose();
+					}
 				}
 
 				BaseStorageFolder? destinationFolder = null;
 
 				var isMultipleItems = await FilesystemTasks.Wrap(async () =>
 				{
-					using SevenZipExtractor? zipFile = await StorageArchiveService.GetSevenZipExtractorAsync(archive.Path);
+					// Why: password 未指定だと部分暗号化 zip でエントリ名が無認可で読まれる。先に取得した password を必ず渡す。
+					using ArchiveReader? zipFile = await StorageArchiveService.GetArchiveReaderAsync(archive.Path, password);
 					if (zipFile is null)
 						return true;
 
-					return zipFile.ArchiveFileData.Select(file =>
+					return zipFile.Items.Select(file =>
 					{
-						var pathCharIndex = file.FileName.IndexOfAny(['/', '\\']);
+						var pathCharIndex = file.FullName.IndexOfAny(['/', '\\']);
 						if (pathCharIndex == -1)
-							return file.FileName;
+							return file.FullName;
 						else
-							return file.FileName.Substring(0, pathCharIndex);
+							return file.FullName.Substring(0, pathCharIndex);
 					})
 					.Distinct().Count() > 1;
 				});

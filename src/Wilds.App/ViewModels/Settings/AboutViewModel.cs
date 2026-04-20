@@ -65,7 +65,7 @@ namespace Wilds.App.ViewModels.Settings
 				new ("https://github.com/jeffijoe/messageformat.net", "MessageFormat"),
 				new ("https://github.com/dotnet/efcore", "EF Core for SQLite"),
 				new ("https://github.com/dotnet/runtime", "Microsoft.Extensions"),
-				new ("https://github.com/files-community/SevenZipSharp", "SevenZipSharp"),
+				new ("https://github.com/1llum1n4t1s/1llum1n4t1s.Sevenzip", "1llum1n4t1s.Sevenzip"),
 				new ("https://sourceforge.net/projects/sevenzip", "7zip"),
 				new ("https://github.com/ericsink/SQLitePCL.raw", "PCL for SQLite"),
 				new ("https://github.com/microsoft/WindowsAppSDK", "WindowsAppSDK"),
@@ -206,7 +206,7 @@ namespace Wilds.App.ViewModels.Settings
 		public string GetVersionsQueryString()
 		{
 			var query = System.Web.HttpUtility.ParseQueryString(string.Empty);
-			query["files_version"] = GetAppVersion();
+			query["wilds_version"] = GetAppVersion();
 			query["windows_version"] = GetWindowsVersion();
 			query["user_id"] = GetUserID();
 			return query.ToString() ?? string.Empty;

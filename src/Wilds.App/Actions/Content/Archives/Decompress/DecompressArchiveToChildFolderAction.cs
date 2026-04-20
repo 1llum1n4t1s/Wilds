@@ -58,7 +58,15 @@ namespace Wilds.App.Actions
 					if (option != ContentDialogResult.Primary)
 						return;
 
-					password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+					try
+					{
+						if (decompressArchiveViewModel.Password is not null)
+							password = Encoding.UTF8.GetString(decompressArchiveViewModel.Password);
+					}
+					finally
+					{
+						decompressArchiveViewModel.Password?.Dispose();
+					}
 				}
 
 				if (currentFolder is not null)

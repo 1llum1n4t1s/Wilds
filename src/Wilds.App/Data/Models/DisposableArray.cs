@@ -1,5 +1,7 @@
-﻿// Copyright (c) Files Community
+// Copyright (c) Files Community
 // Licensed under the MIT License.
+
+using System.Runtime.InteropServices;
 
 namespace Wilds.App.Data.Models
 {
@@ -35,22 +37,26 @@ namespace Wilds.App.Data.Models
 			EnsureSecureDisposal(Bytes);
 		}
 
-		internal static void EnsureSecureDisposal(byte[] buffer)
+		/// <summary>
+		/// バイト配列をゼロ埋めして破棄する。
+		/// Why: Array.Clear のみだと GC 移動時に旧アドレスへコピーが残存する可能性がある。
+		/// 先に Pinned で固定してから Unsafe writer でゼロ埋めし、移動を防ぐ。
+		/// </summary>
+		internal static unsafe void EnsureSecureDisposal(byte[] buffer)
 		{
-			Array.Clear(buffer, 0, buffer.Length);
+			if (buffer is null || buffer.Length == 0) return;
 
-			//var bufHandle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
-			//try
-			//{
-			//    IntPtr bufPtr = bufHandle.AddrOfPinnedObject();
-			//    UIntPtr cnt = new UIntPtr((uint)buffer.Length * (uint)sizeof(byte));
-
-			//    UnsafeNativeApis.RtlZeroMemory(bufPtr, cnt);
-			//}
-			//finally
-			//{
-			//    bufHandle.Free();
-			//}
+			var handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+			try
+			{
+				byte* p = (byte*)handle.AddrOfPinnedObject();
+				for (int i = 0; i < buffer.Length; i++)
+					p[i] = 0;
+			}
+			finally
+			{
+				handle.Free();
+			}
 		}
 
 		public static implicit operator byte[](DisposableArray disposableArray)

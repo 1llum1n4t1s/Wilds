@@ -3,7 +3,7 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -218,7 +218,7 @@ namespace Wilds.App.ViewModels.Settings
 
 				var file = await StorageHelpers.ToStorageItem<BaseStorageFile>(filePath);
 
-				await ZipStorageFolder.InitArchive(file, OutArchiveFormat.Zip);
+				await ZipStorageFolder.InitArchive(file, Format.Zip);
 
 				var zipFolder = (ZipStorageFolder)await ZipStorageFolder.FromStorageFileAsync(file);
 				if (zipFolder is null)

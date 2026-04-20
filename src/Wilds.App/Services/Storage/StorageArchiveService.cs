@@ -1,11 +1,9 @@
-﻿// Copyright (c) Files Community
+// Copyright (c) Files Community
 // Licensed under the MIT License.
 
 using Wilds.Shared.Helpers;
-using ICSharpCode.SharpZipLib.Core;
-using ICSharpCode.SharpZipLib.Zip;
 using Microsoft.Extensions.Logging;
-using SevenZip;
+using Cube.FileSystem.SevenZip;
 using System.IO;
 using System.Text;
 using UtfUnknown;
@@ -20,19 +18,19 @@ namespace Wilds.App.Services
 		private StatusCenterViewModel StatusCenterViewModel { get; } = Ioc.Default.GetRequiredService<StatusCenterViewModel>();
 		private IThreadingService ThreadingService { get; } = Ioc.Default.GetRequiredService<IThreadingService>();
 
+		// Why (P1-5/P1-10): per-file コールバックは高頻度で発火するので UI dispatch を 16ms スロットルで間引く。
+		private const long MinUiDispatchIntervalMs = 16;
+
 		/// <inheritdoc/>
 		public bool CanCompress(IReadOnlyList<ListedItem> items)
 		{
-			return
-				CanDecompress(items) is false ||
-				items.Count > 1;
+			return CanDecompress(items) is false || items.Count > 1;
 		}
 
 		/// <inheritdoc/>
 		public bool CanDecompress(IReadOnlyList<ListedItem> items)
 		{
-			return
-				items.Any() &&
+			return items.Any() &&
 				(items.All(x => x.IsArchive) ||
 				items.All(x =>
 					x.PrimaryItemAttribute == StorageItemTypes.File &&
@@ -45,7 +43,6 @@ namespace Wilds.App.Services
 			var archivePath = compressionModel.GetArchivePath();
 
 			int index = 1;
-
 			while (SystemIO.File.Exists(archivePath) || SystemIO.Directory.Exists(archivePath))
 				archivePath = compressionModel.GetArchivePath($" ({++index})");
 
@@ -89,219 +86,171 @@ namespace Wilds.App.Services
 		}
 
 		/// <inheritdoc/>
-		public Task<bool> DecompressAsync(string archiveFilePath, string destinationFolderPath, string password = "", Encoding? encoding = null)
+		public async Task<bool> DecompressAsync(string archiveFilePath, string destinationFolderPath, string password = "", Encoding? encoding = null)
 		{
-			if (encoding == null)
-			{
-				return DecompressAsyncWithSevenZip(archiveFilePath, destinationFolderPath, password);
-			}
-			else
-			{
-				return DecompressAsyncWithSharpZipLib(archiveFilePath, destinationFolderPath, password, encoding);
-			}
-		}
-		async Task<bool> DecompressAsyncWithSevenZip(string archiveFilePath, string destinationFolderPath, string password = "")
-		{
-			if (string.IsNullOrEmpty(archiveFilePath) ||
-				string.IsNullOrEmpty(destinationFolderPath))
+			if (string.IsNullOrEmpty(archiveFilePath) || string.IsNullOrEmpty(destinationFolderPath))
 				return false;
 
-			using var zipFile = await GetSevenZipExtractorAsync(archiveFilePath, password);
-			if (zipFile is null)
+			using var reader = await GetArchiveReaderAsync(archiveFilePath, password ?? string.Empty, encoding);
+			if (reader is null)
 				return false;
 
-			// Initialize a new in-progress status card
 			var statusCard = StatusCenterHelper.AddCard_Decompress(
 				archiveFilePath.CreateEnumerable(),
 				destinationFolderPath.CreateEnumerable(),
 				ReturnResult.InProgress);
 
-			// Check if the decompress operation canceled
 			if (statusCard.CancellationToken.IsCancellationRequested)
 				return false;
+
+			// Why (P0-2 Zip Slip): Cube/7z 側の防御に依存せず、展開先がユーザーの指示フォルダを
+			// 逸脱するエントリを事前検知する。".."/絶対パス/UNC path を正規化して判定。
+			var normalizedDestination = Path.GetFullPath(destinationFolderPath);
+			var destinationWithSep = normalizedDestination.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+			foreach (var entry in reader.Items)
+			{
+				var name = entry.FullName ?? string.Empty;
+				if (string.IsNullOrEmpty(name)) continue;
+
+				// パス区切り統一 + 正規化
+				var normalizedName = name.Replace('/', Path.DirectorySeparatorChar).TrimStart(Path.DirectorySeparatorChar);
+				string combined;
+				try
+				{
+					combined = Path.GetFullPath(Path.Combine(normalizedDestination, normalizedName));
+				}
+				catch
+				{
+					// ドライブ指定等で Combine が例外を出したら不正と判定
+					App.Logger.LogError("Zip Slip suspicious entry (invalid path): {Entry}", name);
+					StatusCenterViewModel.RemoveItem(statusCard);
+					StatusCenterHelper.AddCard_Decompress(
+						archiveFilePath.CreateEnumerable(),
+						destinationFolderPath.CreateEnumerable(),
+						ReturnResult.Failed);
+					return false;
+				}
+
+				if (!combined.StartsWith(destinationWithSep, StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(combined, normalizedDestination, StringComparison.OrdinalIgnoreCase))
+				{
+					App.Logger.LogError("Zip Slip suspicious entry rejected: {Entry}", name);
+					StatusCenterViewModel.RemoveItem(statusCard);
+					StatusCenterHelper.AddCard_Decompress(
+						archiveFilePath.CreateEnumerable(),
+						destinationFolderPath.CreateEnumerable(),
+						ReturnResult.Failed);
+					return false;
+				}
+			}
+
+			// Why (P2-9): 1-pass で file count と total size を集計する (旧実装は 2 回走査していた)。
+			long totalSize = 0;
+			int fileCount = 0;
+			foreach (var e in reader.Items)
+			{
+				if (!e.IsDirectory)
+				{
+					fileCount++;
+					totalSize += e.Length;
+				}
+			}
 
 			StatusCenterItemProgressModel fsProgress = new(
 				statusCard.ProgressEventSource,
 				enumerationCompleted: true,
 				FileSystemStatusCode.InProgress,
-				zipFile.ArchiveFileData.Count(x => !x.IsDirectory));
-
-			fsProgress.TotalSize = zipFile.ArchiveFileData.Select(x => (long)x.Size).Sum();
+				fileCount);
+			fsProgress.TotalSize = totalSize;
 			fsProgress.Report();
 
-			zipFile.Extracting += (s, e) =>
-			{
-				if (fsProgress.TotalSize > 0)
-					fsProgress.Report(e.BytesProcessed / (double)fsProgress.TotalSize * 100);
-			};
+			long lastDispatchMs = 0;
 
-			zipFile.FileExtractionStarted += (s, e) =>
+			reader.FileExtracting += (s, e) =>
 			{
 				if (statusCard.CancellationToken.IsCancellationRequested)
 					e.Cancel = true;
 
-				if (!e.FileInfo.IsDirectory)
+				if (e.Target is Cube.FileSystem.Entity ent && !ent.IsDirectory)
 				{
+					var nowMs = Environment.TickCount64;
+					if (nowMs - lastDispatchMs < MinUiDispatchIntervalMs) return;
+					lastDispatchMs = nowMs;
+
 					ThreadingService.ExecuteOnUiThreadAsync(() =>
 					{
-						fsProgress.FileName = e.FileInfo.FileName;
+						fsProgress.FileName = ent.FullName;
 						fsProgress.Report();
 					});
 				}
 			};
 
-			zipFile.FileExtractionFinished += (s, e) =>
+			reader.FileExtracted += (s, e) =>
 			{
-				if (!e.FileInfo.IsDirectory)
+				if (e.Target is Cube.FileSystem.Entity ent && !ent.IsDirectory)
 				{
 					fsProgress.AddProcessedItemsCount(1);
 					fsProgress.Report();
 				}
 			};
 
+			var progress = new Progress<Report>(r =>
+			{
+				if (fsProgress.TotalSize > 0 && r.TotalBytes > 0)
+					fsProgress.Report((double)r.Bytes / (long)r.TotalBytes * 100);
+			});
+
 			bool isSuccess = false;
 
 			try
 			{
-				// TODO: Get this method return result
-				await zipFile.ExtractArchiveAsync(destinationFolderPath);
+				await Task.Run(() => reader.Save(destinationFolderPath, progress));
 
 				if (!statusCard.CancellationToken.IsCancellationRequested)
 					isSuccess = true;
 			}
+			catch (EncryptionException)
+			{
+				// Why (P1-8/P2-12): password 要求エラーは型のみログ。平文は残さない。
+				App.Logger.LogError("Archive requires a valid password.");
+				isSuccess = false;
+			}
 			catch (Exception ex)
 			{
+				// Why (P2-12): ex.Message が秘密値を含む可能性があるので型名のみ。
+				App.Logger.LogError("Extraction failed: {ExceptionType}", ex.GetType().Name);
 				isSuccess = false;
-				App.Logger.LogError(ex, "SevenZipLib error extracting archive file.");
 			}
 			finally
 			{
-				// Remove the in-progress status card
 				StatusCenterViewModel.RemoveItem(statusCard);
 
-				if (isSuccess)
+				// Why (P1-4): 失敗/キャンセル時は展開途中ファイルをクリーンアップする。
+				if (!isSuccess)
 				{
-					// Successful
-					StatusCenterHelper.AddCard_Decompress(
-						archiveFilePath.CreateEnumerable(),
-						destinationFolderPath.CreateEnumerable(),
-						ReturnResult.Success);
-				}
-				else
-				{
-					// Error
-					StatusCenterHelper.AddCard_Decompress(
-						archiveFilePath.CreateEnumerable(),
-						destinationFolderPath.CreateEnumerable(),
-						statusCard.CancellationToken.IsCancellationRequested
-							? ReturnResult.Cancelled
-							: ReturnResult.Failed);
-				}
-			}
-
-			return isSuccess;
-		}
-
-		async Task<bool> DecompressAsyncWithSharpZipLib(string archiveFilePath, string destinationFolderPath, string password, Encoding encoding)
-		{
-			if (string.IsNullOrEmpty(archiveFilePath) ||
-				string.IsNullOrEmpty(destinationFolderPath))
-				return false;
-			using var zipFile = new ZipFile(archiveFilePath, StringCodec.FromEncoding(encoding));
-			if (zipFile is null)
-				return false;
-
-			if (!string.IsNullOrEmpty(password))
-				zipFile.Password = password;
-
-			// Initialize a new in-progress status card
-			var statusCard = StatusCenterHelper.AddCard_Decompress(
-				archiveFilePath.CreateEnumerable(),
-				destinationFolderPath.CreateEnumerable(),
-				ReturnResult.InProgress);
-
-			// Check if the decompress operation canceled
-			if (statusCard.CancellationToken.IsCancellationRequested)
-				return false;
-
-			StatusCenterItemProgressModel fsProgress = new(
-				statusCard.ProgressEventSource,
-				enumerationCompleted: true,
-				FileSystemStatusCode.InProgress,
-				zipFile.Cast<ZipEntry>().Count<ZipEntry>(x => !x.IsDirectory));
-			fsProgress.TotalSize = zipFile.Cast<ZipEntry>().Select(x => (long)x.Size).Sum();
-			fsProgress.Report();
-
-			bool isSuccess = false;
-
-			try
-			{
-				long processedBytes = 0;
-				int processedFiles = 0;
-				await Task.Run(async () =>
-				{
-					foreach (ZipEntry zipEntry in zipFile)
+					try
 					{
-						if (statusCard.CancellationToken.IsCancellationRequested)
+						if (Directory.Exists(destinationFolderPath))
 						{
-							isSuccess = false;
-							break;
-						}
-
-						if (!zipEntry.IsFile)
-						{
-							continue; // Ignore directories
-						}
-
-						string entryFileName = zipEntry.Name;
-						string fullZipToPath = Path.Combine(destinationFolderPath, entryFileName);
-						string directoryName = Path.GetDirectoryName(fullZipToPath);
-
-						if (!Directory.Exists(directoryName))
-						{
-							Directory.CreateDirectory(directoryName);
-						}
-
-						byte[] buffer = new byte[4096]; // 4K is a good default
-						using (Stream zipStream = zipFile.GetInputStream(zipEntry))
-						using (FileStream streamWriter = File.Create(fullZipToPath))
-						{
-							await ThreadingService.ExecuteOnUiThreadAsync(() =>
+							foreach (var entry in reader.Items)
 							{
-								fsProgress.FileName = entryFileName;
-								fsProgress.Report();
-							});
-
-							StreamUtils.Copy(zipStream, streamWriter, buffer);
+								if (entry.IsDirectory) continue;
+								var extracted = Path.Combine(destinationFolderPath, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
+								if (File.Exists(extracted))
+								{
+									try { File.Delete(extracted); } catch { /* ignore */ }
+								}
+							}
 						}
-						processedBytes += zipEntry.Size;
-						if (fsProgress.TotalSize > 0)
-						{
-							fsProgress.Report(processedBytes / (double)fsProgress.TotalSize * 100);
-						}
-						processedFiles++;
-						fsProgress.AddProcessedItemsCount(1);
-						fsProgress.Report();
 					}
-				});
-				if (!statusCard.CancellationToken.IsCancellationRequested)
-				{
-					isSuccess = true;
+					catch (Exception cleanupEx)
+					{
+						App.Logger.LogWarning("Partial extract cleanup failed: {ExceptionType}", cleanupEx.GetType().Name);
+					}
 				}
-			}
-			catch (Exception ex)
-			{
-				isSuccess = false;
-				App.Logger.LogError(ex, "SharpZipLib error during decompression.");
-			}
-			finally
-			{
-				// Remove the in-progress status card
-				StatusCenterViewModel.RemoveItem(statusCard);
 
 				if (isSuccess)
 				{
-					// Successful
 					StatusCenterHelper.AddCard_Decompress(
 						archiveFilePath.CreateEnumerable(),
 						destinationFolderPath.CreateEnumerable(),
@@ -309,7 +258,6 @@ namespace Wilds.App.Services
 				}
 				else
 				{
-					// Error
 					StatusCenterHelper.AddCard_Decompress(
 						archiveFilePath.CreateEnumerable(),
 						destinationFolderPath.CreateEnumerable(),
@@ -317,16 +265,10 @@ namespace Wilds.App.Services
 							? ReturnResult.Cancelled
 							: ReturnResult.Failed);
 				}
-
-				if (zipFile != null)
-				{
-					zipFile.IsStreamOwner = true; // Makes close also close the underlying stream
-					zipFile.Close();
-				}
 			}
+
 			return isSuccess;
 		}
-
 
 		/// <inheritdoc/>
 		public string GenerateArchiveNameFromItems(IReadOnlyList<ListedItem> items)
@@ -334,22 +276,21 @@ namespace Wilds.App.Services
 			if (!items.Any())
 				return string.Empty;
 
-			return
-				SystemIO.Path.GetFileName(
-					items.Count is 1
-						? items[0].ItemPath
-						: SystemIO.Path.GetDirectoryName(items[0].ItemPath))
-					?? string.Empty;
+			return SystemIO.Path.GetFileName(
+				items.Count is 1
+					? items[0].ItemPath
+					: SystemIO.Path.GetDirectoryName(items[0].ItemPath))
+				?? string.Empty;
 		}
 
 		/// <inheritdoc/>
 		public async Task<bool> IsEncryptedAsync(string archiveFilePath)
 		{
-			using SevenZipExtractor? zipFile = await GetSevenZipExtractorAsync(archiveFilePath);
-			if (zipFile is null)
+			using ArchiveReader? reader = await GetArchiveReaderAsync(archiveFilePath);
+			if (reader is null)
 				return true;
 
-			return zipFile.ArchiveFileData.Any(file => file.Encrypted || file.Method.Contains("Crypto") || file.Method.Contains("AES"));
+			return reader.Items.Any(file => file.Encrypted);
 		}
 
 		/// <inheritdoc/>
@@ -359,66 +300,63 @@ namespace Wilds.App.Services
 			if (Path.GetExtension(archiveFilePath) != ".zip") return false;
 			try
 			{
-				using (ZipFile zipFile = new ZipFile(archiveFilePath))
+				// Why: 同期処理なので BG スレッドへ退避する (UI から呼ばれると凍結するため)。
+				return await Task.Run(() =>
 				{
-					return !zipFile.Cast<ZipEntry>().All(entry => entry.IsUnicodeText);
-				}
+					using var reader = new ArchiveReader(archiveFilePath);
+					return !reader.Items.All(entry => entry.IsUnicodeText);
+				});
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError(ex, "SharpZipLib error.");
+				App.Logger.LogError("Encoding check failed: {ExceptionType}", ex.GetType().Name);
 				return true;
 			}
 		}
 
+		/// <inheritdoc/>
 		public async Task<Encoding?> DetectEncodingAsync(string archiveFilePath)
 		{
-			//Temporarily using cp437 to decode zip file
-			//because SharpZipLib requires an encoding when decoding
-			//and cp437 contains all bytes as character
-			//which means that we can store any byte array as cp437 string losslessly
+			// cp437 は全バイトを文字として保持できるため、生バイト列の回収に使う。
 			var cp437 = Encoding.GetEncoding(437);
 			try
 			{
-				using (ZipFile zipFile = new ZipFile(archiveFilePath, StringCodec.FromEncoding(cp437)))
+				return await Task.Run(() =>
 				{
-					var fileNameBytes = cp437.GetBytes(
-						String.Join("\n",
-							zipFile.Cast<ZipEntry>()
-								.Where(e => !e.IsUnicodeText)
-								.Select(e => e.Name)
-						)
-					);
+					using var reader = new ArchiveReader(archiveFilePath, string.Empty, new ArchiveOption { Encoding = cp437 });
+
+					// Why (P2-17): "\n" 結合は改行入りのエントリ名で CharsetDetector の統計を汚染する。
+					// 改行類は空白に置換し、セパレータは非印字の NUL にする。
+					var sanitized = reader.Items
+						.Where(e => !e.IsUnicodeText)
+						.Select(e => (e.FullName ?? string.Empty).Replace('\n', ' ').Replace('\r', ' ').Replace('\0', ' '));
+					var fileNameBytes = cp437.GetBytes(string.Join("\0", sanitized));
+
 					var detectionResult = CharsetDetector.DetectFromBytes(fileNameBytes);
 					if (detectionResult.Detected != null && detectionResult.Detected.Confidence > 0.5)
-					{
 						return detectionResult.Detected.Encoding;
-					}
-					else
-					{
-						return null;
-					}
-				}
+					return null;
+				});
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError(ex, "SharpZipLib error detecting encoding.");
+				App.Logger.LogError("Encoding detection failed: {ExceptionType}", ex.GetType().Name);
 				return null;
 			}
 		}
 
 		/// <inheritdoc/>
-		public async Task<SevenZipExtractor?> GetSevenZipExtractorAsync(string archiveFilePath, string password = "")
+		public async Task<ArchiveReader?> GetArchiveReaderAsync(string archiveFilePath, string password = "", Encoding? encoding = null)
 		{
 			return await FilesystemTasks.Wrap(async () =>
 			{
 				BaseStorageFile archive = await StorageHelpers.ToStorageItem<BaseStorageFile>(archiveFilePath);
-				var extractor = string.IsNullOrEmpty(password)
-					? new SevenZipExtractor(archive.Path)
-					: new SevenZipExtractor(archive.Path, password);
+				if (archive is null)
+					return null;
 
-				// Force to load archive (1665013614u)
-				return extractor?.ArchiveFileData is null ? null : extractor;
+				var options = new ArchiveOption { Encoding = encoding };
+				var reader = new ArchiveReader(archive.Path, password ?? string.Empty, options);
+				return reader.Items is null ? null : reader;
 			});
 		}
 	}
