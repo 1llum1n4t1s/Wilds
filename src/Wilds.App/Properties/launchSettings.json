@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Wilds (Unpackaged)": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}
