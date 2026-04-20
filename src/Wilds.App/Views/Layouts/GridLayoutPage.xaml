@@ -557,10 +557,12 @@
 									TextWrapping="Wrap" />
 
 								<!--  Item Type  -->
+								<!--  Why (P2 #22): TextBlock.Text は読み取り専用なので TwoWay に意味がない。
+								     不要な逆方向 binding 評価を除去して OneWay に。  -->
 								<TextBlock
 									Foreground="{ThemeResource TextFillColorSecondaryBrush}"
 									Style="{ThemeResource App.Theme.CaptionTextBlockStyle}"
-									Text="{x:Bind ItemType, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+									Text="{x:Bind ItemType, Mode=OneWay}"
 									TextTrimming="CharacterEllipsis"
 									TextWrapping="NoWrap" />
 

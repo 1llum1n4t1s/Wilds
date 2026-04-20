@@ -131,6 +131,23 @@ namespace Wilds.App.Helpers
 			return new BlockingListEnumerator<T>(collection, syncRoot);
 		}
 
+		/// <summary>
+		/// Why (P2 #17): ToList().FirstOrDefault(predicate) のパターンはコレクション全体のコピーを
+		/// 毎回生成する。述語で 1 要素見つけるだけならロック下で直接線形検索すれば良い。
+		/// </summary>
+		public T? Find(Func<T, bool> predicate)
+		{
+			lock (syncRoot)
+			{
+				foreach (var item in collection)
+				{
+					if (predicate(item))
+						return item;
+				}
+				return default;
+			}
+		}
+
 		IEnumerator IEnumerable.GetEnumerator()
 		{
 			return GetEnumerator();

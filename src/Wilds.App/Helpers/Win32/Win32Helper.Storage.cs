@@ -77,6 +77,11 @@ namespace Wilds.App.Helpers
 
 		private static readonly object _iconOverlayLock = new object();
 
+		// Why (P2 #21): ImageConverter は stateless なのでインスタンスを使い回せる。
+		// 従来は GetIcon / GetIconOverlay / ExtractSelectedIconsFromDLL / ExtractIconsFromDLL の
+		// 各呼び出しで毎回 new ImageConverter() していた (内部で TypeConverter の reflection が走る)。
+		private static readonly ImageConverter _imageConverter = new();
+
 		/// <summary>
 		/// Returns overlay for given file or folder
 		/// </summary>
@@ -116,7 +121,7 @@ namespace Wilds.App.Helpers
 							using var icon = hOverlay.ToIcon();
 							using var image = icon.ToBitmap();
 
-							overlayData = (byte[]?)new ImageConverter().ConvertTo(image, typeof(byte[]));
+							overlayData = (byte[]?)_imageConverter.ConvertTo(image, typeof(byte[]));
 						}
 					}
 
@@ -178,7 +183,7 @@ namespace Wilds.App.Helpers
 						{
 							using var image = GetBitmapFromHBitmap(hbitmap);
 							if (image is not null)
-								iconData = (byte[]?)new ImageConverter().ConvertTo(image, typeof(byte[]));
+								iconData = (byte[]?)_imageConverter.ConvertTo(image, typeof(byte[]));
 						}
 					}
 					finally
@@ -239,7 +244,7 @@ namespace Wilds.App.Helpers
 									using (var icon = hIcon.ToIcon())
 									using (var image = icon.ToBitmap())
 									{
-										iconData = (byte[]?)new ImageConverter().ConvertTo(image, typeof(byte[]));
+										iconData = (byte[]?)_imageConverter.ConvertTo(image, typeof(byte[]));
 									}
 								}
 							}
@@ -318,7 +323,9 @@ namespace Wilds.App.Helpers
 			}
 		}
 
-		private static readonly ConcurrentDictionary<(string File, int Index, int Size), IconFileInfo> _iconCache = new();
+		// Why (P2 #18): 従来は ConcurrentDictionary で無制限に増加していた。
+		// DLL リソースアイコンは大量にあり得るため、LRU で 1024 件上限を設ける。
+		private static readonly Wilds.Shared.Helpers.LruCache<(string File, int Index, int Size), IconFileInfo> _iconCache = new(capacity: 1024);
 
 		public static IList<IconFileInfo> ExtractSelectedIconsFromDLL(string file, IList<int> indexes, int iconSize = 48)
 		{
@@ -336,9 +343,9 @@ namespace Wilds.App.Helpers
 					if (Shell32.SHDefExtractIcon(file, -1 * index, 0, out User32.SafeHICON icon, out User32.SafeHICON hIcon2, Convert.ToUInt32(iconSize)) == HRESULT.S_OK)
 					{
 						using var image = icon.ToBitmap();
-						byte[] bitmapData = (byte[])(new ImageConverter().ConvertTo(image, typeof(byte[])) ?? Array.Empty<byte>());
+						byte[] bitmapData = (byte[])(_imageConverter.ConvertTo(image, typeof(byte[])) ?? Array.Empty<byte>());
 						iconInfo = new IconFileInfo(bitmapData, index);
-						_iconCache[(file, index, iconSize)] = iconInfo;
+						_iconCache.AddOrUpdate((file, index, iconSize), iconInfo);
 						iconsList.Add(iconInfo);
 						User32.DestroyIcon(icon);
 						User32.DestroyIcon(hIcon2);
@@ -373,9 +380,9 @@ namespace Wilds.App.Helpers
 					using var icon = Shell32.ExtractIcon(currentProc.Handle, file, i);
 					using var image = icon.ToBitmap();
 
-					byte[] bitmapData = (byte[])(new ImageConverter().ConvertTo(image, typeof(byte[])) ?? Array.Empty<byte>());
+					byte[] bitmapData = (byte[])(_imageConverter.ConvertTo(image, typeof(byte[])) ?? Array.Empty<byte>());
 					iconInfo = new IconFileInfo(bitmapData, i);
-					_iconCache[(file, i, -1)] = iconInfo;
+					_iconCache.AddOrUpdate((file, i, -1), iconInfo);
 					iconsList.Add(iconInfo);
 				}
 			}
@@ -497,16 +504,23 @@ namespace Wilds.App.Helpers
 			return clone;
 		}
 
-		private static bool IsAlphaBitmap(BitmapData bmpData)
+		private static unsafe bool IsAlphaBitmap(BitmapData bmpData)
 		{
-			for (int y = 0; y <= bmpData.Height - 1; y++)
-			{
-				for (int x = 0; x <= bmpData.Width - 1; x++)
-				{
-					Color pixelColor = Color.FromArgb(
-						Marshal.ReadInt32(bmpData.Scan0, (bmpData.Stride * y) + (4 * x)));
+			// Why (P2 #16): 従来は Marshal.ReadInt32 で 1 ピクセルずつ P/Invoke を走らせていたため
+			// 64x64 アイコンで 4096 回のネイティブ呼び出し + Color.FromArgb ボクシングが発生していた。
+			// unsafe ポインタで stride を直接歩き、A チャネル (BGRA の 4 バイト目) だけをチェックする。
+			int width = bmpData.Width;
+			int height = bmpData.Height;
+			int stride = bmpData.Stride;
+			byte* scan0 = (byte*)bmpData.Scan0;
 
-					if (pixelColor.A < 255)
+			for (int y = 0; y < height; y++)
+			{
+				byte* row = scan0 + y * stride;
+				for (int x = 0; x < width; x++)
+				{
+					// BGRA 32bpp の A チャネルは +3 オフセット
+					if (row[x * 4 + 3] < 255)
 						return true;
 				}
 			}

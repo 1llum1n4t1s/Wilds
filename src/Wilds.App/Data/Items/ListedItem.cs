@@ -121,14 +121,19 @@ namespace Wilds.App.Utils
 					}
 
 					HasTags = !FileTags.IsEmpty();
+					// Why (P2 #23): FileTagsUI は FileTags が変わった時のみ再計算される computed property。
+					// getter でサービス呼び出しが毎回走ると描画経路で無駄なコストがかかるため、
+					// setter 側で cached フィールドを無効化して次回 getter で 1 回だけ再構築する。
+					_fileTagsUICache = null;
 					OnPropertyChanged(nameof(FileTagsUI));
 				}
 			}
 		}
 
+		private IList<TagViewModel>? _fileTagsUICache;
 		public IList<TagViewModel>? FileTagsUI
 		{
-			get => fileTagsSettingsService.GetTagsByIds(FileTags);
+			get => _fileTagsUICache ??= fileTagsSettingsService.GetTagsByIds(FileTags);
 		}
 
 		private Uri customIconSource;
