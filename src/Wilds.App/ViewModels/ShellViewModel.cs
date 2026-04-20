@@ -1469,7 +1469,6 @@ namespace Wilds.App.ViewModels
 			{
 				await Task.Run(async () =>
 				{
-
 					if (GitHelpers.IsRepositoryEx(gitItem.ItemPath, out var repoPath) &&
 						!string.IsNullOrEmpty(repoPath))
 					{
@@ -1481,13 +1480,27 @@ namespace Wilds.App.ViewModels
 						if (getCommit)
 							gitItem.CommitPropertiesInitialized = true;
 
+						// Why (P0 #6): 従来は EnqueueOrInvokeAsync の中で new Repository + Git I/O を
+						// 実行していたため UI スレッドで数百 ms 単位のディスク I/O が走っていた。
+						// I/O はこのバックグラウンド Task.Run で完結させ、UI スレッドでは VM プロパティ
+						// 代入だけを行う。
+						GitItemModel? gitItemModel = null;
+						await SafetyExtensions.IgnoreExceptions(() =>
+						{
+							using var repo = new Repository(repoPath);
+							gitItemModel = GitHelpers.GetGitInformationForItem(repo, gitItem.ItemPath, getStatus, getCommit);
+							return Task.CompletedTask;
+						});
+
+						if (gitItemModel is null)
+							return;
+
+						cts.Token.ThrowIfCancellationRequested();
+
 						await SafetyExtensions.IgnoreExceptions(() =>
 						{
 							return dispatcherQueue.EnqueueOrInvokeAsync(() =>
 							{
-								var repo = new Repository(repoPath);
-								GitItemModel gitItemModel = GitHelpers.GetGitInformationForItem(repo, gitItem.ItemPath, getStatus, getCommit);
-
 								if (getStatus)
 								{
 									gitItem.UnmergedGitStatusIcon = gitItemModel.Status switch
@@ -1508,8 +1521,6 @@ namespace Wilds.App.ViewModels
 									gitItem.GitLastCommitSha = gitItemModel.LastCommit?.Sha.Substring(0, 7);
 									gitItem.GitLastCommitFullSha = gitItemModel.LastCommit?.Sha;
 								}
-
-								repo.Dispose();
 							},
 							Microsoft.UI.Dispatching.DispatcherQueuePriority.Low);
 						});
@@ -2787,21 +2798,55 @@ namespace Wilds.App.ViewModels
 
 		public void UpdateDateDisplay(bool isFormatChange)
 		{
-			App.Logger.LogDebug($"UpdateDateDisplay: isFormatChange={isFormatChange}, itemCount={filesAndFolders?.Count}");
+			// Why (P0 #4): 従来は AsParallel().ForAll(async item => EnqueueOrInvokeAsync × 5) で
+			// 1 秒ごとに最大 5N 回 UI スレッドへホッピングしていた (1000 アイテムで 5000 回/秒)。
+			// バックグラウンドで対象を絞り込み、UI スレッドへのホッピングを 1 回にまとめる。
+			_ = UpdateDateDisplayAsync(isFormatChange);
+		}
 
-			filesAndFolders.ToList().AsParallel().ForAll(async item =>
+		private async Task UpdateDateDisplayAsync(bool isFormatChange)
+		{
+			var snapshot = filesAndFolders?.ToList();
+			if (snapshot is null || snapshot.Count == 0)
+				return;
+
+			App.Logger.LogDebug($"UpdateDateDisplay: isFormatChange={isFormatChange}, itemCount={snapshot.Count}");
+
+			// バックグラウンドで「更新が必要なアイテム」に絞る (UI スレッドに乗せる前にフィルタ完了)
+			var filtered = new List<ListedItem>(snapshot.Count);
+			foreach (var item in snapshot)
 			{
-				// Reassign values to update date display
-				if (isFormatChange || IsDateDiff(item.ItemDateAccessedReal))
-					await dispatcherQueue.EnqueueOrInvokeAsync(() => item.ItemDateAccessedReal = item.ItemDateAccessedReal);
-				if (isFormatChange || IsDateDiff(item.ItemDateCreatedReal))
-					await dispatcherQueue.EnqueueOrInvokeAsync(() => item.ItemDateCreatedReal = item.ItemDateCreatedReal);
-				if (isFormatChange || IsDateDiff(item.ItemDateModifiedReal))
-					await dispatcherQueue.EnqueueOrInvokeAsync(() => item.ItemDateModifiedReal = item.ItemDateModifiedReal);
-				if (item is RecycleBinItem recycleBinItem && (isFormatChange || IsDateDiff(recycleBinItem.ItemDateDeletedReal)))
-					await dispatcherQueue.EnqueueOrInvokeAsync(() => recycleBinItem.ItemDateDeletedReal = recycleBinItem.ItemDateDeletedReal);
-				if (item is IGitItem gitItem && gitItem.GitLastCommitDate is DateTimeOffset offset && (isFormatChange || IsDateDiff(offset)))
-					await dispatcherQueue.EnqueueOrInvokeAsync(() => gitItem.GitLastCommitDate = gitItem.GitLastCommitDate);
+				if (isFormatChange
+					|| IsDateDiff(item.ItemDateAccessedReal)
+					|| IsDateDiff(item.ItemDateCreatedReal)
+					|| IsDateDiff(item.ItemDateModifiedReal)
+					|| (item is RecycleBinItem rb && IsDateDiff(rb.ItemDateDeletedReal))
+					|| (item is IGitItem gi && gi.GitLastCommitDate is DateTimeOffset off && IsDateDiff(off)))
+				{
+					filtered.Add(item);
+				}
+			}
+
+			if (filtered.Count == 0)
+				return;
+
+			// 1 回の EnqueueOrInvokeAsync (正確には chunkSize=200 刻み) で全 setter を同期適用。
+			// self-assignment は setter 内の date formatter を再評価させるため必須。
+			await dispatcherQueue.EnqueueBatchAsync(filtered, batch =>
+			{
+				foreach (var item in batch)
+				{
+					if (isFormatChange || IsDateDiff(item.ItemDateAccessedReal))
+						item.ItemDateAccessedReal = item.ItemDateAccessedReal;
+					if (isFormatChange || IsDateDiff(item.ItemDateCreatedReal))
+						item.ItemDateCreatedReal = item.ItemDateCreatedReal;
+					if (isFormatChange || IsDateDiff(item.ItemDateModifiedReal))
+						item.ItemDateModifiedReal = item.ItemDateModifiedReal;
+					if (item is RecycleBinItem recycleBinItem && (isFormatChange || IsDateDiff(recycleBinItem.ItemDateDeletedReal)))
+						recycleBinItem.ItemDateDeletedReal = recycleBinItem.ItemDateDeletedReal;
+					if (item is IGitItem gitItem && gitItem.GitLastCommitDate is DateTimeOffset offset && (isFormatChange || IsDateDiff(offset)))
+						gitItem.GitLastCommitDate = gitItem.GitLastCommitDate;
+				}
 			});
 		}
 

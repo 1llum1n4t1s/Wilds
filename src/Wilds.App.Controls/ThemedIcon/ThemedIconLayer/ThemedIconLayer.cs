@@ -112,6 +112,8 @@ namespace Wilds.App.Controls
 			if (string.IsNullOrEmpty(pathData))
 				return;
 
+			// Why: P0 #5 の GeometryCache は WinUI 3 の Geometry 共有不可制約に抵触するためロールバック。
+			// ThemedIcon.cs と同じく XamlReader.Load を毎回呼ぶ現状維持とする。
 			var geometry = (Geometry)XamlReader.Load(
 				$"<Geometry xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>{pathData}</Geometry>");
 

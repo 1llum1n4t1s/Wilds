@@ -237,6 +237,10 @@ namespace Wilds.App.Controls
 			if (string.IsNullOrEmpty(pathData))
 				return;
 
+			// Why: P0 #5 で「同じ pathData は共有可能」と期待して GeometryCache を挟んだが、
+			// WinUI 3 の Geometry は DependencyObject で単一 Path にしか紐付けられない (共有不可)。
+			// Freeze 相当の API も無いため、XamlReader.Load は毎回呼ぶ。この最適化は将来の別手段
+			// (事前コード生成 or Win2D CanvasGeometry への移行 等) で再挑戦する。
 			var geometry = (Geometry)XamlReader.Load(
 				$"<Geometry xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'>{pathData}</Geometry>");
 
