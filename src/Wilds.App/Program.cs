@@ -53,6 +53,31 @@ namespace Wilds.App
 		[STAThread]
 		private static void Main()
 		{
+			// Why: VS 18 F5 や外部起動で console が瞬間終了すると何も見えないため、
+			// 未ハンドル例外は %LOCALAPPDATA%\Wilds\startup-crash.log に必ず残す。
+			AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
+			{
+				try
+				{
+					var path = SystemIO.Path.Combine(AppPaths.LocalFolderPath, "startup-crash.log");
+					SystemIO.Directory.CreateDirectory(AppPaths.LocalFolderPath);
+					SystemIO.File.AppendAllText(path,
+						$"[{DateTime.Now:O}] IsTerminating={e.IsTerminating}\n{e.ExceptionObject}\n\n");
+				}
+				catch { /* best-effort */ }
+			};
+			TaskScheduler.UnobservedTaskException += static (_, e) =>
+			{
+				try
+				{
+					var path = SystemIO.Path.Combine(AppPaths.LocalFolderPath, "startup-crash.log");
+					SystemIO.Directory.CreateDirectory(AppPaths.LocalFolderPath);
+					SystemIO.File.AppendAllText(path,
+						$"[{DateTime.Now:O}] UnobservedTaskException\n{e.Exception}\n\n");
+				}
+				catch { /* best-effort */ }
+			};
+
 			// Velopack のインストール/アンインストール/初回起動等の特殊引数を最優先で処理する。
 			// 他のどの初期化よりも前に呼ぶ必要がある (Velopack 公式の要件)。
 			Velopack.VelopackApp.Build().Run();

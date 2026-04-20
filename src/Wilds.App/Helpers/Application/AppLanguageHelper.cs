@@ -1,4 +1,4 @@
-﻿// Copyright (c) Files Community
+// Copyright (c) Files Community
 // Licensed under the MIT License.
 
 using System.Globalization;
@@ -16,6 +16,20 @@ namespace Wilds.App.Helpers
 		/// It is initialized as an empty string.
 		/// </summary>
 		private static readonly string _defaultCode = string.Empty;
+
+		// Why: Unpackaged (WinAppSDK) では ApplicationLanguages.ManifestLanguages が
+		// パッケージ ID を必要として throw する。Strings/<locale>/Resources.resw の存在する
+		// ロケールを既定で埋めておくフォールバック一覧。
+		private static readonly string[] _fallbackLocales = new[]
+		{
+			"af", "ar", "be-BY", "bg", "ca", "cs-CZ", "da", "de-DE", "el",
+			"en-GB", "en-US", "es-419", "es-ES", "fa-IR", "fi-FI", "fil-PH",
+			"fr-FR", "he-IL", "hi-IN", "hr-HR", "hu-HU", "hy-AM", "id-ID",
+			"it-IT", "ja-JP", "ka", "km-KH", "ko-KR", "lt-LT", "lv-LV",
+			"ms-MY", "nb-NO", "nl-NL", "pl-PL", "pt-BR", "pt-PT", "ro-RO",
+			"ru-RU", "sk-SK", "sq-AL", "sr-Cyrl", "sv-SE", "ta", "th-TH",
+			"tr-TR", "uk-UA", "vi", "zh-Hans", "zh-Hant"
+		};
 
 		/// <summary>
 		/// A collection of available languages.
@@ -48,7 +62,7 @@ namespace Wilds.App.Helpers
 		static AppLanguageHelper()
 		{
 			// Populate the Languages collection with available languages
-			var appLanguages = ApplicationLanguages.ManifestLanguages
+			var appLanguages = GetManifestLanguagesSafe()
 			   .Append(string.Empty) // Add default language code
 			   .Select(language => new AppLanguageItem(language))
 			   .OrderBy(language => language.Code is not "") // Default language on top
@@ -56,7 +70,7 @@ namespace Wilds.App.Helpers
 			   .ToList();
 
 			// Get the current primary language override.
-			var current = new AppLanguageItem(ApplicationLanguages.PrimaryLanguageOverride);
+			var current = new AppLanguageItem(GetPrimaryLanguageOverrideSafe());
 
 			// Find the index of the saved language
 			var index = appLanguages.IndexOf(appLanguages.FirstOrDefault(dl => dl.Name == current.Name) ?? appLanguages.First());
@@ -73,6 +87,43 @@ namespace Wilds.App.Helpers
 			PreferredLanguage = SupportedLanguages[index];
 		}
 
+		private static IEnumerable<string> GetManifestLanguagesSafe()
+		{
+			try
+			{
+				return ApplicationLanguages.ManifestLanguages;
+			}
+			catch
+			{
+				return _fallbackLocales;
+			}
+		}
+
+		private static string GetPrimaryLanguageOverrideSafe()
+		{
+			try
+			{
+				return ApplicationLanguages.PrimaryLanguageOverride;
+			}
+			catch
+			{
+				return string.Empty;
+			}
+		}
+
+		private static bool TrySetPrimaryLanguageOverride(string code)
+		{
+			try
+			{
+				ApplicationLanguages.PrimaryLanguageOverride = code;
+				return true;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
 		/// <summary>
 		/// Attempts to change the preferred language code by index.
 		/// </summary>
@@ -86,7 +137,7 @@ namespace Wilds.App.Helpers
 			PreferredLanguage = SupportedLanguages[index];
 
 			// Update the primary language override
-			ApplicationLanguages.PrimaryLanguageOverride = index == 0 ? _defaultCode : PreferredLanguage.Code;
+			TrySetPrimaryLanguageOverride(index == 0 ? _defaultCode : PreferredLanguage.Code);
 			return true;
 		}
 
@@ -116,7 +167,7 @@ namespace Wilds.App.Helpers
 			PreferredLanguage = SupportedLanguages[index];
 
 			// Update the primary language override
-			ApplicationLanguages.PrimaryLanguageOverride = index == 0 ? _defaultCode : PreferredLanguage.Code;
+			TrySetPrimaryLanguageOverride(index == 0 ? _defaultCode : PreferredLanguage.Code);
 			return true;
 		}
 	}
