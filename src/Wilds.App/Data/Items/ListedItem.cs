@@ -136,6 +136,17 @@ namespace Wilds.App.Utils
 			get => _fileTagsUICache ??= fileTagsSettingsService.GetTagsByIds(FileTags);
 		}
 
+		/// <summary>
+		/// Why (Phase 6 P1 #7): 外部でタグ定義 (色/名前) が変わっても FileTags 自体は
+		/// 変化しないためキャッシュが stale になる。ShellViewModel の
+		/// fileTagsSettingsService.OnTagsUpdated から各アイテムのキャッシュを無効化するための API。
+		/// </summary>
+		public void InvalidateFileTagsUI()
+		{
+			_fileTagsUICache = null;
+			OnPropertyChanged(nameof(FileTagsUI));
+		}
+
 		private Uri customIconSource;
 		public Uri CustomIconSource
 		{
@@ -204,16 +215,15 @@ namespace Wilds.App.Utils
 			get => iconOverlay;
 			set
 			{
-				if (value is not null)
+				// Why (Phase 6 P1 #6 fix): 従来は null 代入を無視していたため OneDrive 同期完了や
+				// Git ステータス変化でオーバーレイが不要になっても剥がれなかった。
+				// null / 非 null のどちらも受け入れ、HasIconOverlay 状態が変化した場合のみ追加通知する。
+				var hadOverlay = iconOverlay is not null;
+				if (SetProperty(ref iconOverlay, value))
 				{
-					var hadOverlay = iconOverlay is not null;
-					if (SetProperty(ref iconOverlay, value) && !hadOverlay)
-					{
-						// Why (P1 #14): XAML の IconOverlay Image 要素は x:Load="{x:Bind HasIconOverlay}"
-						// で条件ロード化されている。IconOverlay が null → non-null に変わったときは
-						// HasIconOverlay も通知して要素を遅延ロードさせる。
+					var hasOverlay = value is not null;
+					if (hadOverlay != hasOverlay)
 						OnPropertyChanged(nameof(HasIconOverlay));
-					}
 				}
 			}
 		}

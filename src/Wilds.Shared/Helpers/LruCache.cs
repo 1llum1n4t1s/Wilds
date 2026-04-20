@@ -89,9 +89,9 @@ namespace Wilds.Shared.Helpers
 			// ロック外で factory 実行 (コストの高い処理を lock 内に入れない)
 			var newValue = valueFactory(key);
 
-			TValue? evictedValue = default;
 			TKey? evictedKey = default;
-			bool didEvict = false;
+			TValue? evictedValue = default;
+			bool didEvict;
 			Action<TKey, TValue>? onEvicted = _onEvicted;
 
 			lock (_lock)
@@ -104,16 +104,7 @@ namespace Wilds.Shared.Helpers
 					return raceNode.Value.Value;
 				}
 
-				// 容量超過時は LRU を 1 件 evict
-				if (_lruList.Count >= _capacity)
-				{
-					var last = _lruList.Last!;
-					_lruList.RemoveLast();
-					_map.Remove(last.Value.Key);
-					evictedKey = last.Value.Key;
-					evictedValue = last.Value.Value;
-					didEvict = true;
-				}
+				didEvict = EvictIfFull(out evictedKey, out evictedValue);
 
 				var node = _lruList.AddFirst(new Entry(key, newValue));
 				_map[key] = node;
@@ -129,8 +120,8 @@ namespace Wilds.Shared.Helpers
 		/// <summary>キーと値を追加または更新。容量超過時は LRU を破棄。</summary>
 		public void AddOrUpdate(TKey key, TValue value)
 		{
-			TValue? evictedValue = default;
 			TKey? evictedKey = default;
+			TValue? evictedValue = default;
 			bool didEvict = false;
 			var onEvicted = _onEvicted;
 
@@ -138,18 +129,13 @@ namespace Wilds.Shared.Helpers
 			{
 				if (_map.TryGetValue(key, out var existing))
 				{
-					// 更新: 既存ノード削除
+					// 更新: 既存ノード削除 (eviction コールバックは呼ばない — 更新は破棄ではない)
 					_lruList.Remove(existing);
 					_map.Remove(key);
 				}
-				else if (_lruList.Count >= _capacity)
+				else
 				{
-					var last = _lruList.Last!;
-					_lruList.RemoveLast();
-					_map.Remove(last.Value.Key);
-					evictedKey = last.Value.Key;
-					evictedValue = last.Value.Value;
-					didEvict = true;
+					didEvict = EvictIfFull(out evictedKey, out evictedValue);
 				}
 
 				var node = _lruList.AddFirst(new Entry(key, value));
@@ -158,6 +144,27 @@ namespace Wilds.Shared.Helpers
 
 			if (didEvict && onEvicted is not null)
 				onEvicted(evictedKey!, evictedValue!);
+		}
+
+		/// <summary>
+		/// 容量超過時に LRU 末尾を 1 件 evict する。ロック保持前提。
+		/// GetOrAdd / AddOrUpdate で共有される eviction ロジックを DRY 化。
+		/// </summary>
+		private bool EvictIfFull(out TKey? evictedKey, out TValue? evictedValue)
+		{
+			if (_lruList.Count < _capacity)
+			{
+				evictedKey = default;
+				evictedValue = default;
+				return false;
+			}
+
+			var last = _lruList.Last!;
+			_lruList.RemoveLast();
+			_map.Remove(last.Value.Key);
+			evictedKey = last.Value.Key;
+			evictedValue = last.Value.Value;
+			return true;
 		}
 
 		/// <summary>全エントリ削除。</summary>

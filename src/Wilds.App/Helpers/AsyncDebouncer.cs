@@ -18,6 +18,7 @@ namespace Wilds.App.Helpers
 	{
 		private readonly TimeSpan _interval;
 		private readonly Func<CancellationToken, Task> _callback;
+		private readonly ILogger? _logger;
 		private readonly object _lock = new();
 
 		// 保留中デバウンスのキャンセル用。Trigger のたびに差し替える。
@@ -28,17 +29,21 @@ namespace Wilds.App.Helpers
 		public TimeSpan Interval => _interval;
 
 		/// <summary>同期コールバック用コンストラクタ。</summary>
-		public AsyncDebouncer(TimeSpan interval, Action callback)
-			: this(interval, _ => { callback(); return Task.CompletedTask; })
+		public AsyncDebouncer(TimeSpan interval, Action callback, ILogger? logger = null)
+			: this(interval, _ => { callback(); return Task.CompletedTask; }, logger)
 		{
 		}
 
 		/// <summary>非同期コールバック用コンストラクタ。</summary>
-		public AsyncDebouncer(TimeSpan interval, Func<CancellationToken, Task> callback)
+		/// <param name="logger">
+		/// コールバック内部の例外を記録するロガー (任意)。省略時は fallback で <see cref="App.Logger"/> を使う。
+		/// </param>
+		public AsyncDebouncer(TimeSpan interval, Func<CancellationToken, Task> callback, ILogger? logger = null)
 		{
 			ArgumentNullException.ThrowIfNull(callback);
 			_interval = interval;
 			_callback = callback;
+			_logger = logger;
 		}
 
 		/// <summary>
@@ -98,7 +103,8 @@ namespace Wilds.App.Helpers
 			}
 			catch (Exception ex)
 			{
-				App.Logger?.LogWarning(ex, "AsyncDebouncer callback threw an exception.");
+				// 注入された logger を優先、無ければ App.Logger にフォールバック (既存コード慣習)。
+				(_logger ?? App.Logger)?.LogWarning(ex, "AsyncDebouncer callback threw an exception.");
 			}
 		}
 

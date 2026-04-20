@@ -158,34 +158,46 @@ namespace Wilds.App.ViewModels
 			if (snapshot is null || snapshot.Count == 0)
 				return;
 
+			// Why (Phase 6 P0 #2): 以前は gate.WaitAsync() が CancellationToken を受け取っておらず、
+			// フォルダナビゲーション切替で loadPropsCTS.Cancel しても前回の取得が 4 スロット占有したまま
+			// 解けない問題があった。現在の loadPropsCTS をキャプチャして WaitAsync にも渡す。
+			var cts = loadPropsCTS;
+
 			using var gate = new SemaphoreSlim(4, 4);
 			var tasks = new List<Task>(capacity: Math.Min(snapshot.Count, 32));
 
-			foreach (var item in snapshot)
+			try
 			{
-				if (item is not IGitItem gitItem)
-					continue;
-
-				var needStatus = !gitItem.StatusPropertiesInitialized && value is GitProperties.All or GitProperties.Status;
-				var needCommit = !gitItem.CommitPropertiesInitialized && value is GitProperties.All or GitProperties.Commit;
-				if (!needStatus && !needCommit)
-					continue;
-
-				await gate.WaitAsync();
-				tasks.Add(Task.Run(async () =>
+				foreach (var item in snapshot)
 				{
-					try
-					{
-						await LoadGitPropertiesAsync(gitItem);
-					}
-					finally
-					{
-						gate.Release();
-					}
-				}));
-			}
+					if (item is not IGitItem gitItem)
+						continue;
 
-			await Task.WhenAll(tasks);
+					var needStatus = !gitItem.StatusPropertiesInitialized && value is GitProperties.All or GitProperties.Status;
+					var needCommit = !gitItem.CommitPropertiesInitialized && value is GitProperties.All or GitProperties.Commit;
+					if (!needStatus && !needCommit)
+						continue;
+
+					await gate.WaitAsync(cts.Token);
+					tasks.Add(Task.Run(async () =>
+					{
+						try
+						{
+							await LoadGitPropertiesAsync(gitItem);
+						}
+						finally
+						{
+							gate.Release();
+						}
+					}, cts.Token));
+				}
+
+				await Task.WhenAll(tasks);
+			}
+			catch (OperationCanceledException)
+			{
+				// キャンセル伝播はナビゲーション変更による正常系
+			}
 		}
 
 		public CollectionViewSource viewSource;
@@ -613,8 +625,7 @@ namespace Wilds.App.ViewModels
 			loadThumbnailSemaphore = new SemaphoreSlim(thumbnailConcurrency, thumbnailConcurrency);
 			dispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
-			// Why (P1 #12): DirectoryWatcher_Changed / ItemQueryResult_ContentsChanged の
-			// 200ms debounce。バックグラウンドスレッドから Trigger されるので AsyncDebouncer を使う。
+			// (詳細は _refreshItemsDebouncer の定義コメント参照)
 			_refreshItemsDebouncer = new AsyncDebouncer(TimeSpan.FromMilliseconds(200), () =>
 			{
 				var dq = dispatcherQueue;
@@ -725,6 +736,15 @@ namespace Wilds.App.ViewModels
 
 		private async void FileTagsSettingsService_OnSettingUpdated(object? sender, EventArgs e)
 		{
+			// Why (Phase 6 P1 #7): タグ設定 (色 / 名前) がグローバルに変わったら、
+			// ListedItem.FileTagsUI キャッシュも stale になるので全アイテムで invalidate。
+			// RefreshItems 前でも既存アイテムの表示は再計算される。
+			if (filesAndFolders is not null)
+			{
+				foreach (var item in filesAndFolders)
+					item.InvalidateFileTagsUI();
+			}
+
 			await dispatcherQueue.EnqueueOrInvokeAsync(() =>
 			{
 				if (WorkingDirectory != "Home" && WorkingDirectory != "ReleaseNotes" && WorkingDirectory != "Settings")
@@ -1539,12 +1559,15 @@ namespace Wilds.App.ViewModels
 						// I/O はこのバックグラウンド Task.Run で完結させ、UI スレッドでは VM プロパティ
 						// 代入だけを行う。
 						GitItemModel? gitItemModel = null;
-						await SafetyExtensions.IgnoreExceptions(() =>
+						try
 						{
 							using var repo = new Repository(repoPath);
 							gitItemModel = GitHelpers.GetGitInformationForItem(repo, gitItem.ItemPath, getStatus, getCommit);
-							return Task.CompletedTask;
-						});
+						}
+						catch (Exception ex)
+						{
+							App.Logger?.LogWarning(ex, "Git I/O failed for {Path}", gitItem.ItemPath);
+						}
 
 						if (gitItemModel is null)
 							return;
@@ -2236,9 +2259,6 @@ namespace Wilds.App.ViewModels
 		private void DirectoryWatcher_Changed(object sender, FileSystemEventArgs e)
 		{
 			Debug.WriteLine($"Directory watcher event: {e.ChangeType}, {e.FullPath}");
-
-			// Why (P1 #12): 1 ファイル操作で Created + Renamed など複数イベントが連続発火する。
-			// 200ms debounce でまとめて 1 回だけ RefreshItems に流す。
 			_refreshItemsDebouncer.Trigger();
 		}
 
@@ -2255,8 +2275,6 @@ namespace Wilds.App.ViewModels
 			options.SetThumbnailPrefetch(ThumbnailMode.ListView, 0, ThumbnailOptions.ReturnOnlyIfCached);
 
 			sender.ApplyNewQueryOptions(options);
-
-			// Why (P1 #12): 上と同じく 200ms debounce
 			_refreshItemsDebouncer.Trigger();
 		}
 
@@ -2863,45 +2881,58 @@ namespace Wilds.App.ViewModels
 
 			App.Logger.LogDebug($"UpdateDateDisplay: isFormatChange={isFormatChange}, itemCount={snapshot.Count}");
 
-			// バックグラウンドで「更新が必要なアイテム」に絞る (UI スレッドに乗せる前にフィルタ完了)
-			var filtered = new List<ListedItem>(snapshot.Count);
+			// Why (Phase 6 P1 #4): DateTimeOffset.Now を都度評価するのを避けるため基準時刻を
+			// 1 回だけキャプチャ。filter / batch の両方に同じ now を渡す。
+			var now = DateTimeOffset.Now;
+
+			// バックグラウンドで各アイテムが「更新すべきフィールド」を事前計算。
+			// UI スレッドではこのフラグビットだけ見て self-assign する (再 IsDateDiff を排除)。
+			var plans = new List<(ListedItem Item, UpdateDateFlags Flags)>(snapshot.Count);
 			foreach (var item in snapshot)
 			{
-				if (isFormatChange
-					|| IsDateDiff(item.ItemDateAccessedReal)
-					|| IsDateDiff(item.ItemDateCreatedReal)
-					|| IsDateDiff(item.ItemDateModifiedReal)
-					|| (item is RecycleBinItem rb && IsDateDiff(rb.ItemDateDeletedReal))
-					|| (item is IGitItem gi && gi.GitLastCommitDate is DateTimeOffset off && IsDateDiff(off)))
-				{
-					filtered.Add(item);
-				}
+				var flags = UpdateDateFlags.None;
+				if (isFormatChange || IsDateDiff(now, item.ItemDateAccessedReal)) flags |= UpdateDateFlags.Accessed;
+				if (isFormatChange || IsDateDiff(now, item.ItemDateCreatedReal)) flags |= UpdateDateFlags.Created;
+				if (isFormatChange || IsDateDiff(now, item.ItemDateModifiedReal)) flags |= UpdateDateFlags.Modified;
+				if (item is RecycleBinItem rb && (isFormatChange || IsDateDiff(now, rb.ItemDateDeletedReal))) flags |= UpdateDateFlags.Deleted;
+				if (item is IGitItem gi && gi.GitLastCommitDate is DateTimeOffset off && (isFormatChange || IsDateDiff(now, off))) flags |= UpdateDateFlags.GitCommit;
+
+				if (flags != UpdateDateFlags.None)
+					plans.Add((item, flags));
 			}
 
-			if (filtered.Count == 0)
+			if (plans.Count == 0)
 				return;
 
-			// 1 回の EnqueueOrInvokeAsync (正確には chunkSize=200 刻み) で全 setter を同期適用。
+			// 1 回の EnqueueOrInvokeAsync (chunkSize=200 刻み) で全 setter を同期適用。
 			// self-assignment は setter 内の date formatter を再評価させるため必須。
-			await dispatcherQueue.EnqueueBatchAsync(filtered, batch =>
+			await dispatcherQueue.EnqueueBatchAsync(plans, batch =>
 			{
-				foreach (var item in batch)
+				foreach (var (item, flags) in batch)
 				{
-					if (isFormatChange || IsDateDiff(item.ItemDateAccessedReal))
-						item.ItemDateAccessedReal = item.ItemDateAccessedReal;
-					if (isFormatChange || IsDateDiff(item.ItemDateCreatedReal))
-						item.ItemDateCreatedReal = item.ItemDateCreatedReal;
-					if (isFormatChange || IsDateDiff(item.ItemDateModifiedReal))
-						item.ItemDateModifiedReal = item.ItemDateModifiedReal;
-					if (item is RecycleBinItem recycleBinItem && (isFormatChange || IsDateDiff(recycleBinItem.ItemDateDeletedReal)))
+					if ((flags & UpdateDateFlags.Accessed) != 0) item.ItemDateAccessedReal = item.ItemDateAccessedReal;
+					if ((flags & UpdateDateFlags.Created) != 0) item.ItemDateCreatedReal = item.ItemDateCreatedReal;
+					if ((flags & UpdateDateFlags.Modified) != 0) item.ItemDateModifiedReal = item.ItemDateModifiedReal;
+					if ((flags & UpdateDateFlags.Deleted) != 0 && item is RecycleBinItem recycleBinItem)
 						recycleBinItem.ItemDateDeletedReal = recycleBinItem.ItemDateDeletedReal;
-					if (item is IGitItem gitItem && gitItem.GitLastCommitDate is DateTimeOffset offset && (isFormatChange || IsDateDiff(offset)))
+					if ((flags & UpdateDateFlags.GitCommit) != 0 && item is IGitItem gitItem)
 						gitItem.GitLastCommitDate = gitItem.GitLastCommitDate;
 				}
 			});
 		}
 
-		private static bool IsDateDiff(DateTimeOffset offset) => (DateTimeOffset.Now - offset).TotalDays < 7;
+		[Flags]
+		private enum UpdateDateFlags : byte
+		{
+			None = 0,
+			Accessed = 1,
+			Created = 2,
+			Modified = 4,
+			Deleted = 8,
+			GitCommit = 16,
+		}
+
+		private static bool IsDateDiff(DateTimeOffset now, DateTimeOffset offset) => (now - offset).TotalDays < 7;
 
 		public void Dispose()
 		{

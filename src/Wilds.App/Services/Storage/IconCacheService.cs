@@ -1,15 +1,16 @@
 // Copyright (c) Files Community
 // Licensed under the MIT License.
 
-using System.IO;
 using Wilds.Shared.Helpers;
 
 namespace Wilds.App.Services
 {
 	internal sealed class IconCacheService : IIconCacheService
 	{
+		// Why: SystemIO は System.IO のエイリアス (GlobalUsings.cs 参照)。プロジェクト規約で
+		// System.IO.File/Path の直書きを避け、Windows.Storage の File と衝突しないようにする。
 		// Dummy path to generate generic icons for folders, executables, and shortcuts.
-		private static readonly string _dummyPath = Path.Combine(Path.GetPathRoot(Environment.SystemDirectory)!, "x46696c6573");
+		private static readonly string _dummyPath = SystemIO.Path.Combine(SystemIO.Path.GetPathRoot(Environment.SystemDirectory)!, "x46696c6573");
 
 		// Why (P2 #18): 従来は ConcurrentDictionary で無制限に増加する設計だった。
 		// 拡張子は現実的には数百で収束するが、攻撃的な使われ方・長時間稼働での安全弁として

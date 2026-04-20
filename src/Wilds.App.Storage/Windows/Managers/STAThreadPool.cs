@@ -1,10 +1,7 @@
 // Copyright (c) Files Community
 // Licensed under the MIT License.
 
-using System;
-using System.Threading;
 using System.Threading.Channels;
-using System.Threading.Tasks;
 using Windows.Win32;
 
 namespace Wilds.App.Storage

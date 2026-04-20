@@ -1,5 +1,5 @@
-// Copyright (c) 2024 Files Community
-// Licensed under the MIT License. See the LICENSE.
+// Copyright (c) Files Community
+// Licensed under the MIT License.
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Win32;
@@ -454,7 +454,10 @@ namespace Wilds.App.Helpers
 					return bmp;
 
 				Rectangle bmBounds = new Rectangle(0, 0, bmp.Width, bmp.Height);
-				var bmpData = bmp.LockBits(bmBounds, ImageLockMode.ReadOnly, bmp.PixelFormat);
+				// Why: IsAlphaBitmap が 32bpp BGRA 前提の unsafe ポインタ歩きをするため、
+				// 64bpp ARGB 等が来るとバッファオーバーリードになる。LockBits で常に
+				// Format32bppArgb に正規化する。
+				var bmpData = bmp.LockBits(bmBounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
 
 				if (IsAlphaBitmap(bmpData))
 				{
@@ -509,9 +512,16 @@ namespace Wilds.App.Helpers
 			// Why (P2 #16): 従来は Marshal.ReadInt32 で 1 ピクセルずつ P/Invoke を走らせていたため
 			// 64x64 アイコンで 4096 回のネイティブ呼び出し + Color.FromArgb ボクシングが発生していた。
 			// unsafe ポインタで stride を直接歩き、A チャネル (BGRA の 4 バイト目) だけをチェックする。
+
+			// Why (P0 #1 fix): 32bpp BGRA ポインタ歩きなので、フォーマットが異なる場合は早期 false。
+			// 呼び出し元 (GetBitmapFromHBitmap) で LockBits を Format32bppArgb 固定にしているが、
+			// 二重ガードで安全を取る。
 			int width = bmpData.Width;
 			int height = bmpData.Height;
 			int stride = bmpData.Stride;
+			if (width <= 0 || height <= 0 || stride < width * 4)
+				return false;
+
 			byte* scan0 = (byte*)bmpData.Scan0;
 
 			for (int y = 0; y < height; y++)
