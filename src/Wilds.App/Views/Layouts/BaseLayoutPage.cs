@@ -1204,30 +1204,31 @@ namespace Wilds.App.Views.Layouts
 			MainWindow.Instance.SetCanWindowToFront(true);
 		}
 
+		// Why (P1 #9): コンテナに「イベントハンドラ登録済みフラグ」を Tag として持たせ、
+		// ContainerContentChanging が呼ばれるたびに Pointer 系 7 イベントを外して付け直す
+		// ムダを排除する。仮想化による再利用でも Tag は維持されるので登録は 1 度だけで済む。
+		private const string PointerHandlersTag = "Wilds_PointerHandlers_Attached";
+
 		private void RefreshContainer(SelectorItem container, bool inRecycleQueue)
 		{
-			container.Loaded -= FileListItem_Loaded;
-			container.PointerPressed -= FileListItem_PointerPressed;
-			container.PointerEntered -= FileListItem_PointerEntered;
-			container.PointerExited -= FileListItem_PointerExited;
-			container.Tapped -= FileListItem_Tapped;
-			container.DoubleTapped -= FileListItem_DoubleTapped;
-			container.RightTapped -= FileListItem_RightTapped;
-
 			if (inRecycleQueue)
 			{
 				UninitializeDrag(container);
+				return;
 			}
-			else
-			{
-				container.Loaded += FileListItem_Loaded;
-				container.PointerPressed += FileListItem_PointerPressed;
-				container.PointerEntered += FileListItem_PointerEntered;
-				container.PointerExited += FileListItem_PointerExited;
-				container.Tapped += FileListItem_Tapped;
-				container.DoubleTapped += FileListItem_DoubleTapped;
-				container.RightTapped += FileListItem_RightTapped;
-			}
+
+			// 初回のみハンドラを登録 (再利用時はスキップ)
+			if (container.Tag as string == PointerHandlersTag)
+				return;
+
+			container.Loaded += FileListItem_Loaded;
+			container.PointerPressed += FileListItem_PointerPressed;
+			container.PointerEntered += FileListItem_PointerEntered;
+			container.PointerExited += FileListItem_PointerExited;
+			container.Tapped += FileListItem_Tapped;
+			container.DoubleTapped += FileListItem_DoubleTapped;
+			container.RightTapped += FileListItem_RightTapped;
+			container.Tag = PointerHandlersTag;
 		}
 
 		private void RefreshItem(SelectorItem container, object item, bool inRecycleQueue, ContainerContentChangingEventArgs args)

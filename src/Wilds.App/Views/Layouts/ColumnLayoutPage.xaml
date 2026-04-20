@@ -256,7 +256,7 @@
 										Margin="2"
 										HorizontalAlignment="Left"
 										VerticalAlignment="Bottom"
-										x:Load="True"
+										x:Load="{x:Bind HasIconOverlay, Mode=OneWay}"
 										Source="{x:Bind IconOverlay, Mode=OneWay}"
 										Stretch="Uniform" />
 

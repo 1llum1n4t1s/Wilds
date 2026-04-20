@@ -140,7 +140,7 @@
 							Margin="16"
 							HorizontalAlignment="Left"
 							VerticalAlignment="Bottom"
-							x:Load="True"
+							x:Load="{x:Bind HasIconOverlay, Mode=OneWay}"
 							x:Phase="1"
 							Source="{x:Bind IconOverlay, Mode=OneWay}"
 							Stretch="Uniform" />
@@ -331,7 +331,7 @@
 								Margin="2"
 								HorizontalAlignment="Left"
 								VerticalAlignment="Bottom"
-								x:Load="True"
+								x:Load="{x:Bind HasIconOverlay, Mode=OneWay}"
 								Source="{x:Bind IconOverlay, Mode=OneWay}"
 								Stretch="Uniform" />
 							<Border
@@ -479,7 +479,7 @@
 								Margin="-10"
 								HorizontalAlignment="Right"
 								VerticalAlignment="Top"
-								x:Load="True"
+								x:Load="{x:Bind HasIconOverlay, Mode=OneWay}"
 								x:Phase="1"
 								Source="{x:Bind IconOverlay, Mode=OneWay}"
 								Stretch="Uniform" />
@@ -1009,7 +1009,7 @@
 					Padding="8"
 					VerticalContentAlignment="Stretch"
 					ext:ScrollViewerMiddleClickExtensions.EnableMiddleClickScrolling="{x:Bind IsMiddleClickToScrollEnabled, Mode=OneWay}"
-					wctanimations:ItemsReorderAnimation.Duration="0:0:0.350"
+					wctanimations:ItemsReorderAnimation.Duration="0:0:0"
 					x:FieldModifier="public"
 					AllowDrop="{x:Bind InstanceViewModel.IsPageTypeSearchResults, Converter={StaticResource BoolNegationConverter}, Mode=OneWay}"
 					CanDragItems="{x:Bind AllowItemDrag, Mode=OneWay}"

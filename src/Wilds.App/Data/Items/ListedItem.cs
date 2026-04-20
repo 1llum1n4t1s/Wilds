@@ -201,10 +201,20 @@ namespace Wilds.App.Utils
 			{
 				if (value is not null)
 				{
-					SetProperty(ref iconOverlay, value);
+					var hadOverlay = iconOverlay is not null;
+					if (SetProperty(ref iconOverlay, value) && !hadOverlay)
+					{
+						// Why (P1 #14): XAML の IconOverlay Image 要素は x:Load="{x:Bind HasIconOverlay}"
+						// で条件ロード化されている。IconOverlay が null → non-null に変わったときは
+						// HasIconOverlay も通知して要素を遅延ロードさせる。
+						OnPropertyChanged(nameof(HasIconOverlay));
+					}
 				}
 			}
 		}
+
+		/// <summary>アイコンオーバーレイ (OneDrive 同期アイコン等) を持つかどうか。XAML の x:Load 条件に使う。</summary>
+		public bool HasIconOverlay => iconOverlay is not null;
 
 		private BitmapImage shieldIcon;
 		public BitmapImage ShieldIcon

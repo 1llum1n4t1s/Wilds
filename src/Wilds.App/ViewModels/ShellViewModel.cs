@@ -144,17 +144,48 @@ namespace Wilds.App.ViewModels
 			{
 				if (SetProperty(ref _EnabledGitProperties, value) && value is not GitProperties.None)
 				{
-					filesAndFolders.ToList().ForEach(async item =>
-					{
-						if (item is IGitItem gitItem &&
-							(!gitItem.StatusPropertiesInitialized && value is GitProperties.All or GitProperties.Status
-							|| !gitItem.CommitPropertiesInitialized && value is GitProperties.All or GitProperties.Commit))
-						{
-							await LoadGitPropertiesAsync(gitItem);
-						}
-					});
+					// Why (P1 #13): 従来は List<T>.ForEach(async item => ...) で全アイテム分の
+					// LoadGitPropertiesAsync が一斉に async void 相当で走り、UI スレッドへの
+					// ホッピング波が直撃していた。Task.Run + SemaphoreSlim(4) で並列度を抑える。
+					_ = LoadGitPropertiesForAllItemsAsync(value);
 				}
 			}
+		}
+
+		private async Task LoadGitPropertiesForAllItemsAsync(GitProperties value)
+		{
+			var snapshot = filesAndFolders?.ToList();
+			if (snapshot is null || snapshot.Count == 0)
+				return;
+
+			using var gate = new SemaphoreSlim(4, 4);
+			var tasks = new List<Task>(capacity: Math.Min(snapshot.Count, 32));
+
+			foreach (var item in snapshot)
+			{
+				if (item is not IGitItem gitItem)
+					continue;
+
+				var needStatus = !gitItem.StatusPropertiesInitialized && value is GitProperties.All or GitProperties.Status;
+				var needCommit = !gitItem.CommitPropertiesInitialized && value is GitProperties.All or GitProperties.Commit;
+				if (!needStatus && !needCommit)
+					continue;
+
+				await gate.WaitAsync();
+				tasks.Add(Task.Run(async () =>
+				{
+					try
+					{
+						await LoadGitPropertiesAsync(gitItem);
+					}
+					finally
+					{
+						gate.Release();
+					}
+				}));
+			}
+
+			await Task.WhenAll(tasks);
 		}
 
 		public CollectionViewSource viewSource;
@@ -170,6 +201,11 @@ namespace Wilds.App.ViewModels
 		private CancellationTokenSource searchCTS;
 		private CancellationTokenSource updateTagGroupCTS;
 		private CancellationTokenSource? filterDebounceCS;
+
+		// Why (P1 #12): DirectoryWatcher / StorageFolder ContentsChanged は 1 回のファイル操作で
+		// Created + Deleted + Renamed など複数イベントを連続発火する。debounce 無しだと
+		// 毎イベントで RefreshItems → フル再列挙が走るので 200ms 単位でまとめる。
+		private readonly AsyncDebouncer _refreshItemsDebouncer;
 
 		public event EventHandler FocusFilterHeader;
 
@@ -570,8 +606,22 @@ namespace Wilds.App.ViewModels
 			enumFolderSemaphore = new SemaphoreSlim(1, 1);
 			getFileOrFolderSemaphore = new SemaphoreSlim(50);
 			bulkOperationSemaphore = new SemaphoreSlim(1, 1);
-			loadThumbnailSemaphore = new SemaphoreSlim(1, 1);
+			// Why (P1 #15): 従来は SemaphoreSlim(1, 1) で完全直列化されており、スクロール中に
+			// スタックしたサムネイル取得が新規要求を常にブロックしていた。ProcessorCount/2 (最低 2・最大 4) で
+			// 並列度を与えつつ Shell コール側の内部直列化を過度に追い越さない。
+			var thumbnailConcurrency = Math.Min(4, Math.Max(2, Environment.ProcessorCount / 2));
+			loadThumbnailSemaphore = new SemaphoreSlim(thumbnailConcurrency, thumbnailConcurrency);
 			dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+
+			// Why (P1 #12): DirectoryWatcher_Changed / ItemQueryResult_ContentsChanged の
+			// 200ms debounce。バックグラウンドスレッドから Trigger されるので AsyncDebouncer を使う。
+			_refreshItemsDebouncer = new AsyncDebouncer(TimeSpan.FromMilliseconds(200), () =>
+			{
+				var dq = dispatcherQueue;
+				if (dq is null)
+					return;
+				_ = dq.EnqueueOrInvokeAsync(() => RefreshItems(null));
+			});
 
 			UserSettingsService.OnSettingChangedEvent += UserSettingsService_OnSettingChangedEvent;
 			fileTagsSettingsService.OnSettingImportedEvent += FileTagsSettingsService_OnSettingUpdated;
@@ -1133,8 +1183,9 @@ namespace Wilds.App.ViewModels
 				cancellationToken.ThrowIfCancellationRequested();
 			}
 
-			// Get icon overlay
-			var iconOverlay = await FileThumbnailHelper.GetIconOverlayAsync(item.ItemPath, true);
+			// Why (P1 #8): 従来は isDirectory:true 固定で渡っていた (ファイルに対してもフォルダ属性で問い合わせ)。
+			// 本来 item.IsFolder を渡すべき既存バグを修正。
+			var iconOverlay = await FileThumbnailHelper.GetIconOverlayAsync(item.ItemPath, item.IsFolder);
 
 			cancellationToken.ThrowIfCancellationRequested();
 
@@ -2179,17 +2230,16 @@ namespace Wilds.App.ViewModels
 			}, App.Logger);
 		}
 
-		private async void DirectoryWatcher_Changed(object sender, FileSystemEventArgs e)
+		private void DirectoryWatcher_Changed(object sender, FileSystemEventArgs e)
 		{
 			Debug.WriteLine($"Directory watcher event: {e.ChangeType}, {e.FullPath}");
 
-			await dispatcherQueue.EnqueueOrInvokeAsync(() =>
-			{
-				RefreshItems(null);
-			});
+			// Why (P1 #12): 1 ファイル操作で Created + Renamed など複数イベントが連続発火する。
+			// 200ms debounce でまとめて 1 回だけ RefreshItems に流す。
+			_refreshItemsDebouncer.Trigger();
 		}
 
-		private async void ItemQueryResult_ContentsChanged(IStorageQueryResultBase sender, object args)
+		private void ItemQueryResult_ContentsChanged(IStorageQueryResultBase sender, object args)
 		{
 			// Query options have to be reapplied otherwise old results are returned
 			var options = new QueryOptions()
@@ -2203,10 +2253,8 @@ namespace Wilds.App.ViewModels
 
 			sender.ApplyNewQueryOptions(options);
 
-			await dispatcherQueue.EnqueueOrInvokeAsync(() =>
-			{
-				RefreshItems(null);
-			});
+			// Why (P1 #12): 上と同じく 200ms debounce
+			_refreshItemsDebouncer.Trigger();
 		}
 
 		private void WatchForDirectoryChanges(string path, CloudDriveSyncStatus syncStatus)
@@ -2857,6 +2905,7 @@ namespace Wilds.App.ViewModels
 			CancelLoadAndClearFiles();
 			filterDebounceCS?.Cancel();
 			filterDebounceCS?.Dispose();
+			_refreshItemsDebouncer?.Dispose();
 			App.Logger.LogInformation($"ShellViewModel.Dispose: CurrentFolder={LogPathHelper.GetPathIdentifier(CurrentFolder?.ItemPath)}");
 
 			StorageTrashBinService.Watcher.ItemAdded -= RecycleBinItemCreatedAsync;

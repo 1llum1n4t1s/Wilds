@@ -954,20 +954,31 @@ namespace Wilds.App.Views.Layouts
 			FileList.Focus(FocusState.Programmatic);
 		}
 
+		// Why (P1 #9): 従来は SelectionCheckbox の PointerEntered/Exited/Canceled を毎 content-change
+		// のたびに detach/attach し直していた。コンテナ再利用でも一度付けたハンドラは残るので
+		// AttachedProperty 的に Tag で「登録済み」を覚え、2 回目以降は付け直さない。
+		private const string CheckboxHandlersTag = "Wilds_CheckboxHandlers_Attached";
+
 		private new void FileList_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
 		{
-			var selectionCheckbox = args.ItemContainer.FindDescendant("SelectionCheckbox")!;
-
-			selectionCheckbox.PointerEntered -= SelectionCheckbox_PointerEntered;
-			selectionCheckbox.PointerExited -= SelectionCheckbox_PointerExited;
-			selectionCheckbox.PointerCanceled -= SelectionCheckbox_PointerCanceled;
-
 			base.FileList_ContainerContentChanging(sender, args);
 			SetCheckboxSelectionState(args.Item, args.ItemContainer as ListViewItem);
+
+			if (args.InRecycleQueue)
+				return;
+
+			var selectionCheckbox = args.ItemContainer.FindDescendant("SelectionCheckbox");
+			if (selectionCheckbox is null)
+				return;
+
+			// 初回のみハンドラを登録
+			if (selectionCheckbox.Tag as string == CheckboxHandlersTag)
+				return;
 
 			selectionCheckbox.PointerEntered += SelectionCheckbox_PointerEntered;
 			selectionCheckbox.PointerExited += SelectionCheckbox_PointerExited;
 			selectionCheckbox.PointerCanceled += SelectionCheckbox_PointerCanceled;
+			selectionCheckbox.Tag = CheckboxHandlersTag;
 		}
 
 		private void SetCheckboxSelectionState(object item, ListViewItem? lviContainer = null)
@@ -1077,7 +1088,14 @@ namespace Wilds.App.Views.Layouts
 
 		private void SetToolTip(TextBlock textBlock)
 		{
-			ToolTipService.SetToolTip(textBlock, textBlock.IsTextTrimmed ? textBlock.Text : null);
+			// Why (P1 #11): Details View の 10 TextBlock × DataContextChanged + IsTextTrimmedChanged で
+			// 1 アイテムのスクロール通過あたり最大 20 回呼ばれる。同じ値を書き戻すだけの DP 書き込みを
+			// early-out で削減する (ToolTipService.SetToolTip は DependencyProperty 書き込み)。
+			var desired = textBlock.IsTextTrimmed ? textBlock.Text : null;
+			var current = ToolTipService.GetToolTip(textBlock) as string;
+			if (desired == current)
+				return;
+			ToolTipService.SetToolTip(textBlock, desired);
 		}
 
 		private void FileList_LosingFocus(UIElement sender, LosingFocusEventArgs args)
