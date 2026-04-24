@@ -113,11 +113,11 @@ namespace Wilds.App.Services
 			}
 			catch (COMException ex)
 			{
-				App.Logger.LogInformation(ex, "Failed to change theme mode of the app.");
+				App.Logger?.LogInformation(ex, "Failed to change theme mode of the app.");
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, "Failed to change theme mode of the app.");
+				App.Logger?.LogWarning(ex, "Failed to change theme mode of the app.");
 			}
 		}
 

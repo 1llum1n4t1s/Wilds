@@ -748,7 +748,7 @@ namespace Wilds.App.Utils.Storage
 			catch (Exception ex)
 			{
 				// Could not parse shortcut
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 				return null;
 			}
 		}
@@ -786,12 +786,12 @@ namespace Wilds.App.Utils.Storage
 			catch (UnauthorizedAccessException ex)
 			{
 				// Could not create shortcut
-				App.Logger.LogInformation(ex, "Failed to create shortcut");
+				App.Logger?.LogInformation(ex, "Failed to create shortcut");
 			}
 			catch (Exception ex)
 			{
 				// Could not create shortcut
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 
 			return Task.FromResult(false);
@@ -872,7 +872,7 @@ namespace Wilds.App.Utils.Storage
 			catch (Exception ex)
 			{
 				// Could not create shortcut
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 
 			return false;

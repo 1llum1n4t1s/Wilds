@@ -25,7 +25,7 @@ namespace Wilds.App.UserControls.FilePreviews
 			}
 			catch (EndOfStreamException ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 		}
 	}

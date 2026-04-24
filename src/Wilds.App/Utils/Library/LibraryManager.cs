@@ -86,7 +86,7 @@ namespace Wilds.App.Utils.Library
 				}
 				catch (Exception e)
 				{
-					App.Logger.LogWarning(e, null);
+					App.Logger?.LogWarning(e, null);
 				}
 
 				return [];
@@ -146,7 +146,7 @@ namespace Wilds.App.Utils.Library
 				}
 				catch (Exception e)
 				{
-					App.Logger.LogWarning(e, null);
+					App.Logger?.LogWarning(e, null);
 				}
 
 				return Task.FromResult<ShellLibraryItem>(null);
@@ -227,7 +227,7 @@ namespace Wilds.App.Utils.Library
 				}
 				catch (Exception e)
 				{
-					App.Logger.LogWarning(e, null);
+					App.Logger?.LogWarning(e, null);
 				}
 
 				return Task.FromResult<ShellLibraryItem>(null);
@@ -378,14 +378,14 @@ namespace Wilds.App.Utils.Library
 				var library = SafetyExtensions.IgnoreExceptions(() => new ShellLibraryEx(Shell32.ShellUtil.GetShellItemForPath(newPath), true));
 				if (library is null)
 				{
-					App.Logger.LogWarning($"Failed to open library after {changeType}: {newPath}");
+					App.Logger?.LogWarning($"Failed to open library after {changeType}: {newPath}");
 					return;
 				}
 
 				var library1 = SafetyExtensions.IgnoreExceptions(() => ShellFolderExtensions.GetShellLibraryItem(library, newPath));
 				if (library1 is null)
 				{
-					App.Logger.LogWarning($"Failed to open library after {changeType}: {newPath}");
+					App.Logger?.LogWarning($"Failed to open library after {changeType}: {newPath}");
 					return;
 				}
 

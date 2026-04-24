@@ -18,7 +18,7 @@ namespace Wilds.App.ViewModels.Dialogs
 
 		public ReorderSidebarItemsDialogViewModel()
 		{
-			//App.Logger.LogWarning(string.Join(", ", SidebarPinnedFolderItems.Select(x => x.Path)));
+			//App.Logger?.LogWarning(string.Join(", ", SidebarPinnedFolderItems.Select(x => x.Path)));
 			PrimaryButtonCommand = new RelayCommand(SaveChanges);
 		}
 

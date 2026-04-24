@@ -120,7 +120,7 @@ namespace Wilds.App.Data.Commands
 					.SelectMany(command => command.HotKeys, (command, hotKey) => (Command: command, HotKey: hotKey))
 					.ToImmutableDictionary(item => item.HotKey, item => item.Command);
 
-				App.Logger.LogInformation(ex, "The app found some keys in different commands are duplicated and are using default key bindings for those commands.");
+				App.Logger?.LogInformation(ex, "The app found some keys in different commands are duplicated and are using default key bindings for those commands.");
 			}
 			catch (Exception ex)
 			{
@@ -131,7 +131,7 @@ namespace Wilds.App.Data.Commands
 					.SelectMany(command => command.HotKeys, (command, hotKey) => (Command: command, HotKey: hotKey))
 					.ToImmutableDictionary(item => item.HotKey, item => item.Command);
 
-				App.Logger.LogWarning(ex, "The app is temporarily using default key bindings for all because of a serious error of assigning custom keys.");
+				App.Logger?.LogWarning(ex, "The app is temporarily using default key bindings for all because of a serious error of assigning custom keys.");
 			}
 		}
 

@@ -67,8 +67,18 @@ namespace Wilds.App.Storage
 
 		/// <summary>
 		/// 非同期デリゲート (Func&lt;Task&gt;) をエンキュー。
-		/// STA スレッド内で <c>GetAwaiter().GetResult()</c> で同期待機し、await 継続が他スレッドへ飛ぶのを防ぐ。
+		/// STA スレッド内で <c>GetAwaiter().GetResult()</c> で同期待機する。
 		/// </summary>
+		/// <remarks>
+		/// ⚠️ <b>重要な制約 (rere P2 #24)</b>:
+		/// このオーバーロードに渡す <paramref name="func"/> 内で、<b>WinRT の IAsyncOperation 系を
+		/// AsTask().GetAwaiter().GetResult() で待ったり ConfigureAwait(false) なしで await したりしてはいけない</b>。
+		/// STA スレッドは <see cref="System.Threading.SynchronizationContext"/> を null 化しているが、WinRT の
+		/// 非同期 API は STA メッセージポンプを必要とすることがあり、ポンプを回さずブロックすると
+		/// 永久ハング (デッドロック) する。
+		/// 軽量な C# Task ベース処理 (例: <c>await Task.Run(...)</c> 結果の取得) なら安全。
+		/// 不安なら同期版 (<see cref="EnqueueAsync{TResult}(Func{TResult}, CancellationToken)"/>) を使うこと。
+		/// </remarks>
 		public Task<TResult> EnqueueAsync<TResult>(Func<Task<TResult>> func, CancellationToken ct = default)
 		{
 			var item = new SyncWorkItem<TResult>(() => func().GetAwaiter().GetResult(), ct);
@@ -78,6 +88,9 @@ namespace Wilds.App.Storage
 		}
 
 		/// <summary>非同期デリゲート (Func&lt;Task&gt;) をエンキュー (戻り値なし)。</summary>
+		/// <remarks>
+		/// ⚠️ 同上の制約 (WinRT 非同期 API を内部で待ってはいけない)。
+		/// </remarks>
 		public Task EnqueueAsync(Func<Task> func, CancellationToken ct = default)
 		{
 			var item = new SyncWorkItem<bool>(() => { func().GetAwaiter().GetResult(); return true; }, ct);

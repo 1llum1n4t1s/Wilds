@@ -55,7 +55,7 @@ namespace Wilds.App.Services.Settings
 		{
 			if (FileTagList.Any(x => x.Uid is null))
 			{
-				App.Logger.LogWarning("Tags file is invalid, regenerate");
+				App.Logger?.LogWarning("Tags file is invalid, regenerate");
 				FileTagList = DefaultFileTags;
 			}
 

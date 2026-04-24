@@ -660,7 +660,7 @@ namespace Wilds.App.Utils.Storage
 				if (!collisions.TryAdd(itemPathOrName, FileNameConflictResolveOptionType.GenerateNewName))
 				{
 					// Something strange happened, log
-					App.Logger.LogWarning($"Duplicate key when resolving conflicts: {itemPathOrName}, {src.Name}\n" +
+					App.Logger?.LogWarning($"Duplicate key when resolving conflicts: {itemPathOrName}, {src.Name}\n" +
 						$"Source: {string.Join(", ", source.Select(x => string.IsNullOrEmpty(x.Path) ? x.Item.Name : x.Path))}");
 				}
 
@@ -749,7 +749,7 @@ namespace Wilds.App.Utils.Storage
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex, ex.Message);
+					App.Logger?.LogWarning(ex, ex.Message);
 					return itemsList;
 				}
 			}

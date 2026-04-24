@@ -76,7 +76,7 @@ namespace Wilds.App.Services.PreviewPopupProviders
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogInformation(ex, ex.Message);
+				App.Logger?.LogInformation(ex, ex.Message);
 				return false;
 			}
 		}

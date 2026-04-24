@@ -88,7 +88,7 @@ namespace Wilds.App.Actions
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex.Message, $"Folder '{folderName}' already exists in the destination folder.");
+					App.Logger?.LogWarning(ex.Message, $"Folder '{folderName}' already exists in the destination folder.");
 				}
 			}
 
@@ -106,7 +106,7 @@ namespace Wilds.App.Actions
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex.Message, $"Failed to move file '{fileName}'.");
+					App.Logger?.LogWarning(ex.Message, $"Failed to move file '{fileName}'.");
 				}
 			}
 
@@ -118,7 +118,7 @@ namespace Wilds.App.Actions
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex.Message, $"Failed to delete folder '{path}'.");
+					App.Logger?.LogWarning(ex.Message, $"Failed to delete folder '{path}'.");
 				}
 			}
 		}

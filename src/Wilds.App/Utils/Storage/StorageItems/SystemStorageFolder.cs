@@ -48,7 +48,7 @@ namespace Wilds.App.Utils.Storage
 				}
 				catch (Exception e)
 				{
-					App.Logger.LogWarning(e, null);
+					App.Logger?.LogWarning(e, null);
 				}
 			}
 

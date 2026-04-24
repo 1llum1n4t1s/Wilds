@@ -122,7 +122,7 @@ namespace Wilds.App.Services
 				catch
 				{
 					// ドライブ指定等で Combine が例外を出したら不正と判定
-					App.Logger.LogError("Zip Slip suspicious entry (invalid path): {Entry}", name);
+					App.Logger?.LogError("Zip Slip suspicious entry (invalid path): {Entry}", name);
 					StatusCenterViewModel.RemoveItem(statusCard);
 					StatusCenterHelper.AddCard_Decompress(
 						archiveFilePath.CreateEnumerable(),
@@ -134,7 +134,7 @@ namespace Wilds.App.Services
 				if (!combined.StartsWith(destinationWithSep, StringComparison.OrdinalIgnoreCase)
 					&& !string.Equals(combined, normalizedDestination, StringComparison.OrdinalIgnoreCase))
 				{
-					App.Logger.LogError("Zip Slip suspicious entry rejected: {Entry}", name);
+					App.Logger?.LogError("Zip Slip suspicious entry rejected: {Entry}", name);
 					StatusCenterViewModel.RemoveItem(statusCard);
 					StatusCenterHelper.AddCard_Decompress(
 						archiveFilePath.CreateEnumerable(),
@@ -212,13 +212,13 @@ namespace Wilds.App.Services
 			catch (EncryptionException)
 			{
 				// Why (P1-8/P2-12): password 要求エラーは型のみログ。平文は残さない。
-				App.Logger.LogError("Archive requires a valid password.");
+				App.Logger?.LogError("Archive requires a valid password.");
 				isSuccess = false;
 			}
 			catch (Exception ex)
 			{
 				// Why (P2-12): ex.Message が秘密値を含む可能性があるので型名のみ。
-				App.Logger.LogError("Extraction failed: {ExceptionType}", ex.GetType().Name);
+				App.Logger?.LogError("Extraction failed: {ExceptionType}", ex.GetType().Name);
 				isSuccess = false;
 			}
 			finally
@@ -245,7 +245,7 @@ namespace Wilds.App.Services
 					}
 					catch (Exception cleanupEx)
 					{
-						App.Logger.LogWarning("Partial extract cleanup failed: {ExceptionType}", cleanupEx.GetType().Name);
+						App.Logger?.LogWarning("Partial extract cleanup failed: {ExceptionType}", cleanupEx.GetType().Name);
 					}
 				}
 
@@ -309,7 +309,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError("Encoding check failed: {ExceptionType}", ex.GetType().Name);
+				App.Logger?.LogError("Encoding check failed: {ExceptionType}", ex.GetType().Name);
 				return true;
 			}
 		}
@@ -340,7 +340,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError("Encoding detection failed: {ExceptionType}", ex.GetType().Name);
+				App.Logger?.LogError("Encoding detection failed: {ExceptionType}", ex.GetType().Name);
 				return null;
 			}
 		}

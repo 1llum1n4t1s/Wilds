@@ -63,7 +63,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, "Failed to show dialog");
+				App.Logger?.LogWarning(ex, "Failed to show dialog");
 
 				Debugger.Break();
 			}

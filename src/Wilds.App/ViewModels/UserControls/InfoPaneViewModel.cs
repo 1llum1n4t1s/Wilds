@@ -127,7 +127,7 @@ namespace Wilds.App.ViewModels.UserControls
 			{
 				var oldType = previewPaneContent?.GetType()?.Name;
 				var newType = value?.GetType()?.Name;
-				App.Logger.LogDebug($"PreviewPaneContent changing: {oldType} -> {newType}");
+				App.Logger?.LogDebug($"PreviewPaneContent changing: {oldType} -> {newType}");
 				SetProperty(ref previewPaneContent, value);
 			}
 		}
@@ -197,7 +197,7 @@ namespace Wilds.App.ViewModels.UserControls
 						// Handle exception in case WinUI Windows is closed
 						// (see https://github.com/1llum1n4t1s/Wilds/issues)
 
-						App.Logger.LogWarning(ex, ex.Message);
+						App.Logger?.LogWarning(ex, ex.Message);
 					}
 
 					break;

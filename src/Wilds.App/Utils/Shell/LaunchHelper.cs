@@ -249,7 +249,7 @@ namespace Wilds.App.Utils.Shell
 			catch (Exception ex)
 			{
 				// Generic error, log
-				App.Logger.LogWarning(ex, $"Error launching: {application}");
+				App.Logger?.LogWarning(ex, $"Error launching: {application}");
 				return false;
 			}
 		}

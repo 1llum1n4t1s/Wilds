@@ -34,7 +34,7 @@ namespace Wilds.App.Data.Contracts
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogDebug(ex, "Failed to load image model from path.");
+				App.Logger?.LogDebug(ex, "Failed to load image model from path.");
 			}
 
 			return null;

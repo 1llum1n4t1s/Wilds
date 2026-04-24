@@ -111,7 +111,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 				return false;
 			}
 		}
@@ -162,7 +162,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 				return false;
 			}
 		}
@@ -178,7 +178,7 @@ namespace Wilds.App.Services
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 				return false;
 			}
 		}

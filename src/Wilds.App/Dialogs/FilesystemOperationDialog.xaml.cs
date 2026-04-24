@@ -65,7 +65,7 @@ namespace Wilds.App.Dialogs
 				// Handle exception in case WinUI Windows is closed
 				// (see https://github.com/1llum1n4t1s/Wilds/issues)
 
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 		}
 

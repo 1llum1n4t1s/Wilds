@@ -1051,7 +1051,7 @@ namespace Wilds.App.ViewModels.UserControls
 					}
 					catch (Exception ex)
 					{
-						App.Logger.LogWarning(ex, ex.Message);
+						App.Logger?.LogWarning(ex, ex.Message);
 					}
 				}
 

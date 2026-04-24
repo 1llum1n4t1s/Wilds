@@ -128,7 +128,7 @@ namespace Wilds.App.ViewModels.Properties
 					}
 					catch (Exception ex)
 					{
-						App.Logger.LogWarning(ex, ex.Message);
+						App.Logger?.LogWarning(ex, ex.Message);
 					}
 				}
 			}

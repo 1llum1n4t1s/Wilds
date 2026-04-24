@@ -188,7 +188,7 @@ namespace Wilds.App
 					}
 					catch (Exception ex)
 					{
-						App.Logger.LogWarning(ex, "Failed to open files.");
+						App.Logger?.LogWarning(ex, "Failed to open files.");
 						if (rootFrame.Content is null || rootFrame.Content is SplashScreenPage || !MainPageViewModel.AppInstances.Any())
 							rootFrame.Navigate(typeof(MainPage), null, new SuppressNavigationTransitionInfo());
 						else
@@ -268,7 +268,7 @@ namespace Wilds.App
 					// Handle exception in case WinUI Windows is closed
 					// (see https://github.com/1llum1n4t1s/Wilds/issues)
 
-					App.Logger.LogWarning(ex, ex.Message);
+					App.Logger?.LogWarning(ex, ex.Message);
 					return;
 				}
 

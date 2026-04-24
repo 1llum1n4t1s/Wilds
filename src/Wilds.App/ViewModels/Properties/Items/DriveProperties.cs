@@ -84,7 +84,7 @@ namespace Wilds.App.ViewModels.Properties
 			}
 			catch (Exception e)
 			{
-				App.Logger.LogWarning(e, "Failed to get sync root quota for path: {Path}", Drive.Path);
+				App.Logger?.LogWarning(e, "Failed to get sync root quota for path: {Path}", Drive.Path);
 			}
 
 			try
@@ -103,7 +103,7 @@ namespace Wilds.App.ViewModels.Properties
 			catch (Exception e)
 			{
 				ViewModel.LastSeparatorVisibility = false;
-				App.Logger.LogWarning(e, e.Message);
+				App.Logger?.LogWarning(e, e.Message);
 			}
 		}
 	}

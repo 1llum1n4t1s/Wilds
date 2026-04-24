@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Files Community
 // Licensed under the MIT License.
 
+using Wilds.Shared;
 using Wilds.Shared.Helpers;
 using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
@@ -12,9 +13,11 @@ namespace Wilds.App.Server;
 
 class Program
 {
+	// Why (rere P2 #32): 旧来は "Wilds" を直書きしており Wilds.App 側の WildsAppInfo.PackageName と
+	// 重複していた。Wilds.Shared.AppConstants 経由で単一定義参照に統一。
 	// Unpackaged 配布では ApplicationData.Current が使えないので LOCALAPPDATA 直下に出す。
 	private static readonly string LogDirectory = Path.Combine(
-		Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Wilds", "Local");
+		Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), AppConstants.PackageName, "Local");
 	internal static readonly AsyncManualResetEvent ExitSignalEvent = new();
 	private static readonly CancellationTokenSource cancellationTokenSource = new();
 	private static readonly StreamWriter logWriter = CreateLogWriter();

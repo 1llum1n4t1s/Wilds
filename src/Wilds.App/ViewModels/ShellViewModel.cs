@@ -955,7 +955,7 @@ namespace Wilds.App.ViewModels
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 		}
 
@@ -1093,7 +1093,7 @@ namespace Wilds.App.ViewModels
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 			finally
 			{
@@ -1798,7 +1798,7 @@ namespace Wilds.App.ViewModels
 
 		public void CloseWatcher()
 		{
-			App.Logger.LogInformation($"CloseWatcher: aProcessQueueAction={aProcessQueueAction?.Status.ToString()}, gitProcessQueueAction={gitProcessQueueAction?.Status.ToString()}");
+			App.Logger?.LogInformation($"CloseWatcher: aProcessQueueAction={aProcessQueueAction?.Status.ToString()}, gitProcessQueueAction={gitProcessQueueAction?.Status.ToString()}");
 
 			watcher?.Dispose();
 			watcher = null;
@@ -2131,7 +2131,7 @@ namespace Wilds.App.ViewModels
 				catch (Exception ex)
 				{
 					// Handle errors with setting the URI
-					App.Logger.LogWarning(ex, ex.Message);
+					App.Logger?.LogWarning(ex, ex.Message);
 				}
 			}
 
@@ -2587,7 +2587,7 @@ namespace Wilds.App.ViewModels
 							}
 							catch (Exception ex)
 							{
-								App.Logger.LogWarning(ex, ex.Message);
+								App.Logger?.LogWarning(ex, ex.Message);
 							}
 
 							if (anyEdits && sampler.CheckNow())
@@ -2899,7 +2899,7 @@ namespace Wilds.App.ViewModels
 			if (snapshot is null || snapshot.Count == 0)
 				return;
 
-			App.Logger.LogDebug($"UpdateDateDisplay: isFormatChange={isFormatChange}, itemCount={snapshot.Count}");
+			App.Logger?.LogDebug($"UpdateDateDisplay: isFormatChange={isFormatChange}, itemCount={snapshot.Count}");
 
 			// Why (Phase 6 P1 #4): DateTimeOffset.Now を都度評価するのを避けるため基準時刻を
 			// 1 回だけキャプチャ。filter / batch の両方に同じ now を渡す。

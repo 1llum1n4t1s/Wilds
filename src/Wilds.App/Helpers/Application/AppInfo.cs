@@ -13,7 +13,12 @@ namespace Wilds.App.Helpers
 		/// <summary>
 		/// アプリ名。旧 Package.Current.Id.Name に相当。レジストリキー等に使う安定した識別子。
 		/// </summary>
-		public const string PackageName = "Wilds";
+		/// <remarks>
+		/// Why (rere P2 #32): 単一定義は <see cref="Wilds.Shared.AppConstants.PackageName"/> 側にあり、
+		/// Wilds.App.Server 等の他プロジェクトと共有する。<see cref="WildsAppInfo"/> 自身は WinUI 依存の
+		/// AppInfo (Version / InstalledPath 等) に集中する。
+		/// </remarks>
+		public const string PackageName = Wilds.Shared.AppConstants.PackageName;
 
 		/// <summary>
 		/// 表示名。旧 Package.Current.DisplayName に相当。

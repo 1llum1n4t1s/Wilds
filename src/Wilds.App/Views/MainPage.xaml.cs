@@ -316,7 +316,7 @@ namespace Wilds.App.Views
 			if (!App.AppModel.IsMainWindowClosed)
 				InfoPane?.ViewModel.UpdateDateDisplay();
 			else
-				App.Logger.LogWarning("UpdateDateDisplayTimer_Tick: Timer firing after window closed!");
+				App.Logger?.LogWarning("UpdateDateDisplayTimer_Tick: Timer firing after window closed!");
 		}
 
 		private void Page_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -416,7 +416,7 @@ namespace Wilds.App.Views
 				// Handle exception in case WinUI Windows is closed
 				// (see https://github.com/1llum1n4t1s/Wilds/issues)
 
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 			}
 		}
 

@@ -778,7 +778,7 @@ namespace Wilds.App.Views
 
 		public void Dispose()
 		{
-			App.Logger.LogInformation($"ShellPanesPage.Dispose: PaneCount={GetPaneCount()}, ActivePane={LogPathHelper.GetPathIdentifier(ActivePane?.TabBarItemParameter?.NavigationParameter?.ToString())}");
+			App.Logger?.LogInformation($"ShellPanesPage.Dispose: PaneCount={GetPaneCount()}, ActivePane={LogPathHelper.GetPathIdentifier(ActivePane?.TabBarItemParameter?.NavigationParameter?.ToString())}");
 
 			MainWindow.Instance.SizeChanged -= MainWindow_SizeChanged;
 

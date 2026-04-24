@@ -58,7 +58,7 @@ namespace Wilds.App.Utils
 			var rootAdded = await FilesystemTasks.Wrap(() => StorageFolder.GetFolderFromPathAsync(e.DeviceId).AsTask());
 			if (!rootAdded)
 			{
-				App.Logger.LogWarning($"{rootAdded.ErrorCode}: Attempting to add the device, {e.DeviceId},"
+				App.Logger?.LogWarning($"{rootAdded.ErrorCode}: Attempting to add the device, {e.DeviceId},"
 					+ " failed at the StorageFolder initialization step. This device will be ignored.");
 				return;
 			}
@@ -90,7 +90,7 @@ namespace Wilds.App.Utils
 			}
 			catch (Exception ex) when (ex is ArgumentException or UnauthorizedAccessException or COMException)
 			{
-				App.Logger.LogWarning($"{ex.GetType()}: Attempting to add the device, {args.Name},"
+				App.Logger?.LogWarning($"{ex.GetType()}: Attempting to add the device, {args.Name},"
 					+ $" failed at the StorageFolder initialization step. This device will be ignored. Device ID: {deviceId}");
 				return;
 			}

@@ -169,7 +169,7 @@ namespace Wilds.App.Helpers
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, null);
+				App.Logger?.LogWarning(ex, null);
 			}
 		}
 

@@ -67,7 +67,7 @@ namespace Wilds.App.Utils.Storage
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex, "Error enumerating directory contents.");
+					App.Logger?.LogWarning(ex, "Error enumerating directory contents.");
 
 					break;
 				}
@@ -162,7 +162,7 @@ namespace Wilds.App.Utils.Storage
 				}
 				catch (Exception ex)
 				{
-					App.Logger.LogWarning(ex, "Error enumerating directory contents.");
+					App.Logger?.LogWarning(ex, "Error enumerating directory contents.");
 					break;
 				}
 

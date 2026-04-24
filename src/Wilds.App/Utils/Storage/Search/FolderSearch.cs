@@ -88,7 +88,7 @@ namespace Wilds.App.Utils.Storage
 			}
 			catch (Exception e)
 			{
-				App.Logger.LogWarning(e, "Search failure");
+				App.Logger?.LogWarning(e, "Search failure");
 			}
 
 			return Task.CompletedTask;
@@ -130,7 +130,7 @@ namespace Wilds.App.Utils.Storage
 			}
 			catch (Exception e)
 			{
-				App.Logger.LogWarning(e, "Search failure");
+				App.Logger?.LogWarning(e, "Search failure");
 			}
 
 			return results;
@@ -162,7 +162,7 @@ namespace Wilds.App.Utils.Storage
 					}
 					catch (Exception ex)
 					{
-						App.Logger.LogWarning(ex, "Error creating ListedItem from StorageItem");
+						App.Logger?.LogWarning(ex, "Error creating ListedItem from StorageItem");
 					}
 
 					if (results.Count == 32 || results.Count % 300 == 0 /*|| sampler.CheckNow()*/)
@@ -343,7 +343,7 @@ namespace Wilds.App.Utils.Storage
 					}
 					catch (Exception ex)
 					{
-						App.Logger.LogWarning(ex, "Error creating ListedItem from StorageItem");
+						App.Logger?.LogWarning(ex, "Error creating ListedItem from StorageItem");
 					}
 				}
 

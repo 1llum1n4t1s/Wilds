@@ -104,7 +104,7 @@ namespace Wilds.App.Actions
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, "Failed to copy path to clipboard.");
+				App.Logger?.LogWarning(ex, "Failed to copy path to clipboard.");
 			}
 		}
 

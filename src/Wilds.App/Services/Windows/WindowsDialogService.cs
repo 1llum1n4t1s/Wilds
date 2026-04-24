@@ -28,7 +28,7 @@ namespace Wilds.App.Services
 				// Handle COM creation failure gracefully
 				if (hr.Failed)
 				{
-					App.Logger.LogError("Failed to create IFileOpenDialog COM object. HRESULT: 0x{0:X8}", hr.Value);
+					App.Logger?.LogError("Failed to create IFileOpenDialog COM object. HRESULT: 0x{0:X8}", hr.Value);
 					return false;
 				}
 
@@ -64,7 +64,7 @@ namespace Wilds.App.Services
 					// Handle shell item creation failure gracefully
 					if (hr.Failed)
 					{
-						App.Logger.LogWarning("Failed to create shell item for default folder '{0}'. HRESULT: 0x{1:X8}. Dialog will open without default folder.", Environment.GetFolderPath(defaultFolder), hr.Value);
+						App.Logger?.LogWarning("Failed to create shell item for default folder '{0}'. HRESULT: 0x{1:X8}. Dialog will open without default folder.", Environment.GetFolderPath(defaultFolder), hr.Value);
 						// Continue without setting default folder rather than failing completely
 					}
 				}
@@ -88,7 +88,7 @@ namespace Wilds.App.Services
 				// Handle dialog show failure gracefully
 				if (hr.Failed)
 				{
-					App.Logger.LogError("Failed to show FileSaveDialog. HRESULT: 0x{0:X8}", hr.Value);
+					App.Logger?.LogError("Failed to show FileSaveDialog. HRESULT: 0x{0:X8}", hr.Value);
 					return false;
 				}
 
@@ -104,12 +104,12 @@ namespace Wilds.App.Services
 			}
 			catch (COMException comEx)
 			{
-				App.Logger.LogError(comEx, "COM failure while opening FileOpenDialog. HRESULT: 0x{0:X8}", comEx.HResult);
+				App.Logger?.LogError(comEx, "COM failure while opening FileOpenDialog. HRESULT: 0x{0:X8}", comEx.HResult);
 				return false;
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError(ex, "Unexpected error while opening FileOpenDialog.");
+				App.Logger?.LogError(ex, "Unexpected error while opening FileOpenDialog.");
 				return false;
 			}
 		}
@@ -127,7 +127,7 @@ namespace Wilds.App.Services
 				// Handle COM creation failure gracefully
 				if (hr.Failed)
 				{
-					App.Logger.LogError("Failed to create IFileSaveDialog COM object. HRESULT: 0x{0:X8}", hr.Value);
+					App.Logger?.LogError("Failed to create IFileSaveDialog COM object. HRESULT: 0x{0:X8}", hr.Value);
 					return false;
 				}
 
@@ -163,7 +163,7 @@ namespace Wilds.App.Services
 					// Handle shell item creation failure gracefully
 					if (hr.Failed)
 					{
-						App.Logger.LogWarning("Failed to create shell item for default folder '{0}'. HRESULT: 0x{1:X8}. Dialog will open without default folder.", Environment.GetFolderPath(defaultFolder), hr.Value);
+						App.Logger?.LogWarning("Failed to create shell item for default folder '{0}'. HRESULT: 0x{1:X8}. Dialog will open without default folder.", Environment.GetFolderPath(defaultFolder), hr.Value);
 						// Continue without setting default folder rather than failing completely
 					}
 				}
@@ -187,7 +187,7 @@ namespace Wilds.App.Services
 				// Handle dialog show failure gracefully
 				if (hr.Failed)
 				{
-					App.Logger.LogError("Failed to show FileSaveDialog. HRESULT: 0x{0:X8}", hr.Value);
+					App.Logger?.LogError("Failed to show FileSaveDialog. HRESULT: 0x{0:X8}", hr.Value);
 					return false;
 				}
 
@@ -203,12 +203,12 @@ namespace Wilds.App.Services
 			}
 			catch (COMException comEx)
 			{
-				App.Logger.LogError(comEx, "COM failure while opening FileSaveDialog. HRESULT: 0x{0:X8}", comEx.HResult);
+				App.Logger?.LogError(comEx, "COM failure while opening FileSaveDialog. HRESULT: 0x{0:X8}", comEx.HResult);
 				return false;
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogError(ex, "Unexpected error while opening FileSaveDialog.");
+				App.Logger?.LogError(ex, "Unexpected error while opening FileSaveDialog.");
 				return false;
 			}
 		}

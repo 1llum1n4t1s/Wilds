@@ -33,13 +33,13 @@ namespace Wilds.App.Services
 				var res = await FilesystemTasks.Wrap(() => StorageFolder.GetFolderFromPathAsync(drive.Name).AsTask());
 				if (res.ErrorCode is FileSystemStatusCode.Unauthorized)
 				{
-					App.Logger.LogWarning($"{res.ErrorCode}: Attempting to add the device, {drive.Name},"
+					App.Logger?.LogWarning($"{res.ErrorCode}: Attempting to add the device, {drive.Name},"
 						+ " failed at the StorageFolder initialization step. This device will be ignored.");
 					continue;
 				}
 				else if (!res)
 				{
-					App.Logger.LogWarning($"{res.ErrorCode}: Attempting to add the device, {drive.Name},"
+					App.Logger?.LogWarning($"{res.ErrorCode}: Attempting to add the device, {drive.Name},"
 						+ " failed at the StorageFolder initialization step. This device will be ignored.");
 					continue;
 				}
@@ -49,7 +49,7 @@ namespace Wilds.App.Services
 				var label = DriveHelpers.GetExtendedDriveLabel(drive);
 				var driveItem = await DriveItem.CreateFromPropertiesAsync(res.Result, drive.Name.TrimEnd('\\'), label, type, thumbnail);
 
-				App.Logger.LogInformation($"Drive added: {driveItem.Path}, {driveItem.Type}");
+				App.Logger?.LogInformation($"Drive added: {driveItem.Path}, {driveItem.Type}");
 
 				yield return driveItem;
 			}

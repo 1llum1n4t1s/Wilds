@@ -206,7 +206,7 @@ namespace Wilds.App.ViewModels.UserControls.Widgets
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogInformation(ex, "Could not populate recent files");
+				App.Logger?.LogInformation(ex, "Could not populate recent files");
 			}
 			finally
 			{
@@ -223,7 +223,7 @@ namespace Wilds.App.ViewModels.UserControls.Widgets
 			{
 				Items.Insert(index < 0 ? Items.Count : Math.Min(index, Items.Count), recentItem);
 				_ = recentItem.LoadRecentItemIconAsync()
-					.ContinueWith(t => App.Logger.LogWarning(t.Exception, null), TaskContinuationOptions.OnlyOnFaulted);
+					.ContinueWith(t => App.Logger?.LogWarning(t.Exception, null), TaskContinuationOptions.OnlyOnFaulted);
 				return true;
 			}
 			return false;

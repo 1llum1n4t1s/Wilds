@@ -293,7 +293,7 @@ namespace Wilds.App.Helpers
 			}
 			catch (InvalidOperationException ex)
 			{
-				App.Logger.LogWarning(ex, ex.Message);
+				App.Logger?.LogWarning(ex, ex.Message);
 				return false;
 			}
 			catch (Win32Exception)

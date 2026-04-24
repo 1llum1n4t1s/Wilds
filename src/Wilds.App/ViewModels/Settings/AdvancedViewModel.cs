@@ -187,7 +187,7 @@ namespace Wilds.App.ViewModels.Settings
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, "Error importing settings");
+				App.Logger?.LogWarning(ex, "Error importing settings");
 				UIHelpers.CloseAllDialogs();
 				await DialogDisplayHelper.ShowDialogAsync(Strings.SettingsImportErrorTitle.GetLocalizedResource(), Strings.SettingsImportErrorDescription.GetLocalizedResource());
 			}
@@ -244,7 +244,7 @@ namespace Wilds.App.ViewModels.Settings
 			}
 			catch (Exception ex)
 			{
-				App.Logger.LogWarning(ex, "Error exporting settings");
+				App.Logger?.LogWarning(ex, "Error exporting settings");
 			}
 		}
 
