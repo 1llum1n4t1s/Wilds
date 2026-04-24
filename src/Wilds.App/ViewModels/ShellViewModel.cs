@@ -2517,7 +2517,10 @@ namespace Wilds.App.ViewModels
 
 			const int UPDATE_BATCH_SIZE = 32;
 			var sampler = new IntervalSampler(200);
+			// Why (rere P1 #18): Queue<T>.Contains は O(n)。Git checkout / zip 展開で updateQueue が
+			// 数百件に膨れると Contains チェックが 2 乗コストになる。HashSet を並走させて重複判定を O(1) に。
 			var updateQueue = new Queue<string>();
+			var updateQueueSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
 			var anyEdits = false;
 			ListedItem? lastItemAdded = null;
@@ -2563,7 +2566,9 @@ namespace Wilds.App.ViewModels
 										break;
 
 									case FILE_ACTION_MODIFIED:
-										if (!updateQueue.Contains(operation.FileName))
+										// Why (rere P1 #18): HashSet.Add は重複なら false を返すので
+										// 1 回の操作で「重複チェック + 追加」を O(1) 完了できる。
+										if (updateQueueSet.Add(operation.FileName))
 											updateQueue.Enqueue(operation.FileName);
 										break;
 
@@ -2591,7 +2596,11 @@ namespace Wilds.App.ViewModels
 
 						var itemsToUpdate = new List<string>();
 						for (var i = 0; i < UPDATE_BATCH_SIZE && updateQueue.Count > 0; i++)
-							itemsToUpdate.Add(updateQueue.Dequeue());
+						{
+							var dequeued = updateQueue.Dequeue();
+							updateQueueSet.Remove(dequeued);  // (rere P1 #18)
+							itemsToUpdate.Add(dequeued);
+						}
 
 						await UpdateFilesOrFoldersAsync(itemsToUpdate, hasSyncStatus);
 					}
@@ -2600,7 +2609,11 @@ namespace Wilds.App.ViewModels
 					{
 						var itemsToUpdate = new List<string>();
 						for (var i = 0; i < UPDATE_BATCH_SIZE && updateQueue.Count > 0; i++)
-							itemsToUpdate.Add(updateQueue.Dequeue());
+						{
+							var dequeued = updateQueue.Dequeue();
+							updateQueueSet.Remove(dequeued);  // (rere P1 #18)
+							itemsToUpdate.Add(dequeued);
+						}
 
 						await UpdateFilesOrFoldersAsync(itemsToUpdate, hasSyncStatus);
 					}
@@ -2745,7 +2758,10 @@ namespace Wilds.App.ViewModels
 
 			try
 			{
-				var matchingItems = filesAndFolders.ToList().Where(x => paths.Any(p => p.Equals(x.ItemPath, StringComparison.OrdinalIgnoreCase)));
+				// Why (rere P1 #16): 従来は paths を Any() で内側ループに回して O(N×M) 比較していた。
+				// HashSet で O(1) lookup 化し、N=5000, M=32 バッチで 160,000 → 5,000 比較に圧縮。
+				var pathSet = new HashSet<string>(paths, StringComparer.OrdinalIgnoreCase);
+				var matchingItems = filesAndFolders.ToList().Where(x => pathSet.Contains(x.ItemPath));
 				var results = await Task.WhenAll(matchingItems.Select(x => GetFileOrFolderUpdateInfoAsync(x, hasSyncStatus)));
 
 				await dispatcherQueue.EnqueueOrInvokeAsync(() =>
@@ -2944,7 +2960,21 @@ namespace Wilds.App.ViewModels
 			filterDebounceCS?.Cancel();
 			filterDebounceCS?.Dispose();
 			_refreshItemsDebouncer?.Dispose();
-			App.Logger.LogInformation($"ShellViewModel.Dispose: CurrentFolder={LogPathHelper.GetPathIdentifier(CurrentFolder?.ItemPath)}");
+			App.Logger?.LogInformation($"ShellViewModel.Dispose: CurrentFolder={LogPathHelper.GetPathIdentifier(CurrentFolder?.ItemPath)}");
+
+			// Why (rere P0 #4): 従来は CancelLoadAndClearFiles / CloseWatcher 等が CTS を Cancel して
+			// new CTS に置換えるだけで Dispose() 漏れていた。CancellationToken.Register 済みの
+			// コールバック参照が保持 → GC 回収不能。Dispose 時に全 CTS/Semaphore をまとめて解放する。
+			SafeDispose(ref addFilesCTS);
+			SafeDispose(ref semaphoreCTS);
+			SafeDispose(ref loadPropsCTS);
+			SafeDispose(ref watcherCTS);
+			if (searchCTS is not null) { try { searchCTS.Cancel(); } catch { } try { searchCTS.Dispose(); } catch { } }
+			if (updateTagGroupCTS is not null) { try { updateTagGroupCTS.Cancel(); } catch { } try { updateTagGroupCTS.Dispose(); } catch { } }
+			try { enumFolderSemaphore?.Dispose(); } catch { }
+			try { getFileOrFolderSemaphore?.Dispose(); } catch { }
+			try { bulkOperationSemaphore?.Dispose(); } catch { }
+			try { loadThumbnailSemaphore?.Dispose(); } catch { }
 
 			StorageTrashBinService.Watcher.ItemAdded -= RecycleBinItemCreatedAsync;
 			StorageTrashBinService.Watcher.ItemDeleted -= RecycleBinItemDeletedAsync;
@@ -2954,6 +2984,14 @@ namespace Wilds.App.ViewModels
 			fileTagsSettingsService.OnTagsUpdated -= FileTagsSettingsService_OnSettingUpdated;
 			folderSizeProvider.SizeChanged -= FolderSizeProvider_SizeChanged;
 			folderSettings.LayoutModeChangeRequested -= LayoutModeChangeRequested;
+		}
+
+		// Why (rere P0 #4): Cancel → Dispose を安全に順序付けるヘルパー。
+		private static void SafeDispose(ref CancellationTokenSource cts)
+		{
+			try { cts?.Cancel(); } catch { }
+			try { cts?.Dispose(); } catch { }
+			cts = null!;
 		}
 	}
 
