@@ -596,12 +596,22 @@ namespace Wilds.App.Utils.Git
 			});
 		}
 
+		// Why (rere P1 #19): HttpClient を RequireGitAuthenticationAsync で毎回 new していた。
+		// ソケット枯渇リスク回避のため static singleton + デフォルトヘッダ設定を一元化。
+		// User-Agent は後段 (rere P1 #10 クリーンカットリブランド) で "Wilds App" に更新予定 (別 PR)。
+		private static readonly HttpClient _authHttpClient = CreateAuthHttpClient();
+		private static HttpClient CreateAuthHttpClient()
+		{
+			var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
+			client.DefaultRequestHeaders.Add("Accept", "application/json");
+			client.DefaultRequestHeaders.Add("User-Agent", "Files App");
+			return client;
+		}
+
 		public static async Task RequireGitAuthenticationAsync()
 		{
 			var pending = true;
-			var client = new HttpClient();
-			client.DefaultRequestHeaders.Add("Accept", "application/json");
-			client.DefaultRequestHeaders.Add("User-Agent", "Files App");
+			var client = _authHttpClient;
 
 			JsonDocument? codeJsonContent;
 			try

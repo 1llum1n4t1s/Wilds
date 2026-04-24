@@ -17,6 +17,13 @@ namespace Wilds.App.Services
 		private const string GitHubRepoUrl = "https://github.com/1llum1n4t1s/Wilds";
 		private const string ReleaseChannel = "win";
 
+		// Why (rere P1 #19): HttpClient を `using var client = new HttpClient()` で毎回生成するアンチパターンは
+		// OS ソケット (TIME_WAIT) をすぐ解放しないためソケット枯渇リスクがある。static 再利用 + 10s timeout。
+		private static readonly HttpClient _httpClient = new()
+		{
+			Timeout = TimeSpan.FromSeconds(10),
+		};
+
 		private readonly UpdateManager _updateManager;
 
 		private UpdateInfo? _pendingUpdate;
@@ -62,6 +69,9 @@ namespace Wilds.App.Services
 				return;
 			}
 
+			// Why (rere P2 #28): CheckForUpdatesAsync + DownloadUpdatesAsync に timeout が無いと
+			// ネットワーク障害時に最悪無限待機する。30s で打ち切り、次回起動で再試行に委ねる。
+			using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 			try
 			{
 				_logger?.LogInformation("Velopack: 更新チェックを開始します。");
@@ -79,8 +89,12 @@ namespace Wilds.App.Services
 				_pendingUpdate = updateInfo;
 
 				// バックグラウンドでダウンロードまで完了させてから UI にボタンを出す
-				await _updateManager.DownloadUpdatesAsync(updateInfo);
+				await _updateManager.DownloadUpdatesAsync(updateInfo, cancelToken: cts.Token);
 				IsUpdateAvailable = true;
+			}
+			catch (OperationCanceledException)
+			{
+				_logger?.LogWarning("Velopack: 更新チェックがタイムアウトしました (30s)。");
 			}
 			catch (Exception ex)
 			{
@@ -111,11 +125,10 @@ namespace Wilds.App.Services
 
 		public async Task CheckForReleaseNotesAsync()
 		{
-			using var client = new HttpClient();
-
+			// Why (rere P1 #19): 共有 HttpClient + 明示 timeout。毎回 new HttpClient() だった経路を廃止。
 			try
 			{
-				var response = await client.GetAsync(Constants.ExternalUrl.ReleaseNotesUrl);
+				var response = await _httpClient.GetAsync(Constants.ExternalUrl.ReleaseNotesUrl);
 				AreReleaseNotesAvailable = response.IsSuccessStatusCode;
 			}
 			catch
