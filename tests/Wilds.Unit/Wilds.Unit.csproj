@@ -1,0 +1,28 @@
+<!--  Copyright (c) Files Community. Licensed under the MIT License.  -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Why (rere P1 #31):
+       Wilds.Shared / Wilds.App.Helpers の WinUI 非依存ロジック (LruCache, AsyncDebouncer) を
+       軽量にユニットテストするためのプロジェクト。Wilds.App.UITests は WinUI3 で重いので分離。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <Configurations>Debug;Release</Configurations>
+    <EnableMSTestRunner>true</EnableMSTestRunner>
+    <OutputType>Exe</OutputType>
+    <Platforms>x64;arm64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest.TestAdapter" />
+    <PackageReference Include="MSTest.TestFramework" />
+    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Wilds.Shared\Wilds.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

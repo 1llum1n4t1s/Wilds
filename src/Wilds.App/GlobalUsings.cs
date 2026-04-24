@@ -82,3 +82,4 @@ global using global::Wilds.App.Storage.Watchers;
 global using global::Wilds.Shared;
 global using global::Wilds.Shared.Attributes;
 global using global::Wilds.Shared.Extensions;
+global using global::Wilds.Shared.Helpers;
