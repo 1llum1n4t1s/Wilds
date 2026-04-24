@@ -228,7 +228,7 @@ namespace Wilds.App
 					return;
 
 				var results = items.Select(x => x.ItemPath).ToList();
-				System.IO.File.WriteAllLines(OutputPath, results);
+				SystemIO.File.WriteAllLines(OutputPath, results);
 
 				IntPtr eventHandle = Win32PInvoke.CreateEvent(IntPtr.Zero, false, false, "FILEDIALOG");
 				Win32PInvoke.SetEvent(eventHandle);

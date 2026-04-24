@@ -75,7 +75,7 @@ namespace Wilds.App.Helpers
 				}
 				else if (typeof(IStorageItem).IsAssignableFrom(typeof(TRequested)))
 				{
-					if (System.IO.Path.HasExtension(path)) // Possibly a file
+					if (SystemIO.Path.HasExtension(path)) // Possibly a file
 					{
 						await GetFileAsync();
 					}

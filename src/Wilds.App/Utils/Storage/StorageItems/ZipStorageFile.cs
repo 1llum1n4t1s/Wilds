@@ -403,7 +403,7 @@ namespace Wilds.App.Utils.Storage
 			if (_cachedIndex >= 0 && _cachedIndex < reader.Items.Count)
 				return reader.Items[_cachedIndex];
 
-			var entry = reader.Items.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FullName) == Path);
+			var entry = reader.Items.FirstOrDefault(x => SystemIO.Path.Combine(containerPath, x.FullName) == Path);
 			if (entry is not null) _cachedIndex = entry.Index;
 			return entry;
 		}

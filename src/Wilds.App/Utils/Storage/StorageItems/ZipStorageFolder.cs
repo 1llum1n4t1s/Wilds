@@ -144,7 +144,7 @@ namespace Wilds.App.Utils.Storage
 			if (reader is null || reader.Items is null)
 				return new BaseBasicProperties();
 
-			var entry = reader.Items.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FullName) == Path);
+			var entry = reader.Items.FirstOrDefault(x => SystemIO.Path.Combine(containerPath, x.FullName) == Path);
 			return entry is null
 				? new BaseBasicProperties()
 				: new ZipFolderBasicProperties(entry);
@@ -169,8 +169,8 @@ namespace Wilds.App.Utils.Storage
 				using ArchiveReader reader = await OpenArchiveReaderAsync();
 				if (reader is null || reader.Items is null) return null;
 
-				var filePath = System.IO.Path.Combine(Path, name);
-				var entry = reader.Items.FirstOrDefault(x => System.IO.Path.Combine(containerPath, x.FullName) == filePath);
+				var filePath = SystemIO.Path.Combine(Path, name);
+				var entry = reader.Items.FirstOrDefault(x => SystemIO.Path.Combine(containerPath, x.FullName) == filePath);
 				if (entry is null) return null;
 
 				if (entry.IsDirectory)
@@ -212,7 +212,7 @@ namespace Wilds.App.Utils.Storage
 				var items = new Dictionary<string, IStorageItem>(StringComparer.OrdinalIgnoreCase);
 				foreach (var entry in reader.Items)
 				{
-					string winPath = System.IO.Path.Combine(System.IO.Path.GetFullPath(containerPath), entry.FullName);
+					string winPath = SystemIO.Path.Combine(SystemIO.Path.GetFullPath(containerPath), entry.FullName);
 					if (!winPath.StartsWith(Path.WithEnding("\\"), StringComparison.Ordinal))
 						continue;
 
@@ -221,7 +221,7 @@ namespace Wilds.App.Utils.Storage
 
 					if (entry.IsDirectory || split.Length > 1)
 					{
-						var itemPath = System.IO.Path.Combine(Path, split[0]);
+						var itemPath = SystemIO.Path.Combine(Path, split[0]);
 						if (!items.ContainsKey(itemPath))
 						{
 							var folder = new ZipStorageFolder(itemPath, containerPath, entry, backingFile);
@@ -282,7 +282,7 @@ namespace Wilds.App.Utils.Storage
 		{
 			return AsyncInfo.Run((cancellationToken) => SafetyExtensions.Wrap<BaseStorageFolder>(async () =>
 			{
-				var zipDesiredName = System.IO.Path.Combine(Path, desiredName);
+				var zipDesiredName = SystemIO.Path.Combine(Path, desiredName);
 				var item = await GetItemAsync(desiredName);
 				if (item is not null)
 				{
@@ -514,7 +514,7 @@ namespace Wilds.App.Utils.Storage
 			{
 				if (reader is null || reader.Items is null) return null;
 				return reader.Items
-					.Where(x => System.IO.Path.Combine(containerPath, x.FullName).IsSubPathOf(Path))
+					.Where(x => SystemIO.Path.Combine(containerPath, x.FullName).IsSubPathOf(Path))
 					.Select(e => (e.Index, e.FullName))
 					.ToList();
 			}
@@ -527,7 +527,7 @@ namespace Wilds.App.Utils.Storage
 		{
 			return AsyncInfo.Run((cancellationToken) => SafetyExtensions.Wrap<BaseStorageFile>(async () =>
 			{
-				var zipDesiredName = System.IO.Path.Combine(Path, desiredName);
+				var zipDesiredName = SystemIO.Path.Combine(Path, desiredName);
 				var item = await GetItemAsync(desiredName);
 				if (item is not null)
 				{

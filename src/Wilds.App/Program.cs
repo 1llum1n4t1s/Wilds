@@ -211,8 +211,8 @@ namespace Wilds.App
 					File.Exists(tileArgs.Arguments))
 				{
 					var installedPath = WildsAppInfo.InstalledPath;
-					var fullTilePath = System.IO.Path.GetFullPath(tileArgs.Arguments);
-					var installedFull = System.IO.Path.GetFullPath(installedPath).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+					var fullTilePath = SystemIO.Path.GetFullPath(tileArgs.Arguments);
+					var installedFull = SystemIO.Path.GetFullPath(installedPath).TrimEnd(SystemIO.Path.DirectorySeparatorChar) + SystemIO.Path.DirectorySeparatorChar;
 					if (fullTilePath.StartsWith(installedFull, StringComparison.OrdinalIgnoreCase))
 					{
 						OpenFileFromTile(fullTilePath);
