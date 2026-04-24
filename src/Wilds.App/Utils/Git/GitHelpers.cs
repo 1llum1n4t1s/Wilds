@@ -29,12 +29,9 @@ namespace Wilds.App.Utils.Git
 
 		private static readonly IDialogService _dialogService = Ioc.Default.GetRequiredService<IDialogService>();
 
-		private static readonly FetchOptions _fetchOptions = new()
-		{
-			Prune = true
-		};
-
-		private static readonly PullOptions _pullOptions = new();
+		// Why (rere P0 #5): FetchOptions / PullOptions を static 共有していたため、並列 Fetch/Pull で
+		// CredentialsProvider が相互上書きされ、tokenA と tokenB がレース状態で入れ替わる危険があった。
+		// ヘルパーを介してメソッドスコープ内に閉じる。
 
 		private static readonly string _clientId = AppLifecycleHelper.AppEnvironment is AppEnvironment.Dev
 				? string.Empty
@@ -355,7 +352,29 @@ namespace Wilds.App.Utils.Git
 				branch.FriendlyName.Equals(branchName, StringComparison.OrdinalIgnoreCase));
 		}
 
+		// Why (rere P0 #5): `async void` だった FetchOrigin を Task 返却に変更し、呼び出し側が
+		// 任意で待機・例外捕捉できるようにする。既存呼び出しは引数指定なしで起動しても
+		// Task を単純に破棄するだけなので動作互換。
+		public static Task FetchOriginAsync(string? repositoryPath, CancellationToken cancellationToken = default)
+		{
+			return FetchOriginCoreAsync(repositoryPath, cancellationToken);
+		}
+
+		/// <summary>後方互換: fire-and-forget 呼び出し元のための void overload。</summary>
 		public static async void FetchOrigin(string? repositoryPath, CancellationToken cancellationToken = default)
+		{
+			try
+			{
+				await FetchOriginCoreAsync(repositoryPath, cancellationToken);
+			}
+			catch (Exception ex)
+			{
+				// Why (rere P0 #5): async void 例外消失を防ぐため明示的にロギング。
+				_logger?.LogWarning(ex, "FetchOrigin failed");
+			}
+		}
+
+		private static async Task FetchOriginCoreAsync(string? repositoryPath, CancellationToken cancellationToken)
 		{
 			if (string.IsNullOrWhiteSpace(repositoryPath))
 				return;
@@ -364,9 +383,13 @@ namespace Wilds.App.Utils.Git
 			var signature = repository.Config.BuildSignature(DateTimeOffset.Now);
 
 			var token = CredentialsHelpers.GetPassword(GIT_RESOURCE_NAME, GIT_RESOURCE_USERNAME);
+
+			// Why (rere P0 #5): FetchOptions をメソッドローカルに閉じる。static 共有だと
+			// 並列 Fetch で CredentialsProvider が相互上書きされる。
+			var fetchOptions = new FetchOptions { Prune = true };
 			if (signature is not null && !string.IsNullOrWhiteSpace(token))
 			{
-				_fetchOptions.CredentialsProvider = (url, user, cred)
+				fetchOptions.CredentialsProvider = (url, user, cred)
 					=> new UsernamePasswordCredentials
 					{
 						Username = signature.Name,
@@ -379,6 +402,8 @@ namespace Wilds.App.Utils.Git
 				IsExecutingGitAction = true;
 			});
 
+			// Why (rere P0 #6): useSemaphore:true 明示。libgit2 はスレッドセーフでない操作があり
+			// 同一 `.git` を並列で触ると heap corruption リスクがある。
 			await DoGitOperationAsync<GitOperationResult>(() =>
 			{
 				cancellationToken.ThrowIfCancellationRequested();
@@ -394,7 +419,7 @@ namespace Wilds.App.Utils.Git
 							repository,
 							remote.Name,
 							remote.FetchRefSpecs.Select(rs => rs.Specification),
-							_fetchOptions,
+							fetchOptions,
 							"git fetch updated a ref");
 					}
 
@@ -408,7 +433,7 @@ namespace Wilds.App.Utils.Git
 				}
 
 				return result;
-			});
+			}, useSemaphore: true);
 
 			MainWindow.Instance.DispatcherQueue.TryEnqueue(() =>
 			{
@@ -432,10 +457,16 @@ namespace Wilds.App.Utils.Git
 				return;
 
 			var token = CredentialsHelpers.GetPassword(GIT_RESOURCE_NAME, GIT_RESOURCE_USERNAME);
+
+			// Why (rere P0 #5): PullOptions / FetchOptions もメソッドローカルに閉じて
+			// 並列 Pull で CredentialsProvider が相互上書きされる問題を回避。
+			var pullOptions = new PullOptions
+			{
+				FetchOptions = new FetchOptions { Prune = true }
+			};
 			if (!string.IsNullOrWhiteSpace(token))
 			{
-				_pullOptions.FetchOptions ??= _fetchOptions;
-				_pullOptions.FetchOptions.CredentialsProvider = (url, user, cred)
+				pullOptions.FetchOptions.CredentialsProvider = (url, user, cred)
 					=> new UsernamePasswordCredentials
 					{
 						Username = signature.Name,
@@ -448,6 +479,7 @@ namespace Wilds.App.Utils.Git
 				IsExecutingGitAction = true;
 			});
 
+			// Why (rere P0 #6): useSemaphore:true で libgit2 の並列破壊を防ぐ。
 			var result = await DoGitOperationAsync<GitOperationResult>(() =>
 			{
 				try
@@ -455,7 +487,7 @@ namespace Wilds.App.Utils.Git
 					LibGit2Sharp.Commands.Pull(
 						repository,
 						signature,
-						_pullOptions);
+						pullOptions);
 				}
 				catch (Exception ex)
 				{
@@ -465,7 +497,7 @@ namespace Wilds.App.Utils.Git
 				}
 
 				return GitOperationResult.Success;
-			});
+			}, useSemaphore: true);
 
 			if (result is GitOperationResult.AuthorizationError)
 			{
@@ -861,7 +893,11 @@ namespace Wilds.App.Utils.Git
 				ex.Message.Contains("authentication replays", StringComparison.OrdinalIgnoreCase);
 		}
 
-		private static async Task<T?> DoGitOperationAsync<T>(Func<object> payload, bool useSemaphore = false)
+		// Why (rere P0 #6): 従来は useSemaphore = false がデフォルトで全呼び出し箇所が
+		// セマフォをスキップしていた。libgit2 はスレッドセーフでない操作があるため同一 `.git` を
+		// 並列で触ると AccessViolationException (heap corruption) / index 破損リスクがある。
+		// デフォルトを true に変更し、明示的に false を渡さないかぎり直列化される。
+		private static async Task<T?> DoGitOperationAsync<T>(Func<object> payload, bool useSemaphore = true)
 		{
 			if (useSemaphore)
 				await GitOperationSemaphore.WaitAsync();
