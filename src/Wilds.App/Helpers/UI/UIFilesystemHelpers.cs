@@ -274,8 +274,11 @@ namespace Wilds.App.Helpers
 
 			if (isFtp)
 			{
+				// Why (rere P1 #12): 従来は static Dictionary に NetworkCredential を直接保存していたため
+				// プロセスメモリに平文相当でパスワードが残存していた。PasswordVault (DPAPI 保護) 経由で
+				// 永続保存に切り替え、毎接続時に最小限の時間だけ復号する。
 				var host = FtpHelpers.GetFtpHost(path);
-				FtpManager.Credentials[host] = new NetworkCredential(credentials.UserName, credentials.SecurePassword);
+				FtpManager.SaveCredential(host, credentials.UserName, credentials.Password);
 			}
 
 			return credentials;

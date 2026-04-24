@@ -262,7 +262,7 @@ namespace Wilds.App.Utils.Storage
 			ushort port = FtpHelpers.GetFtpPort(Path);
 			var credentials = Credentials is not null ?
 				new NetworkCredential(Credentials.UserName, Credentials.SecurePassword) :
-				FtpManager.Credentials.Get(host, FtpManager.Anonymous);
+				FtpManager.GetCredential(host);
 
 			return new(host, credentials, port);
 		}

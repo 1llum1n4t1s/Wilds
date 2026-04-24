@@ -58,7 +58,7 @@ namespace Wilds.App.Storage
 		{
 			var host = GetFtpHost(ftpPath);
 			var port = GetFtpPort(ftpPath);
-			var credentials = FtpManager.Credentials.Get(host, FtpManager.Anonymous);
+			var credentials = FtpManager.GetCredential(host);
 
 			return new(host, credentials, port);
 		}
