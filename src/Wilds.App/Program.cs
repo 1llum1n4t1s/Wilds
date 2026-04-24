@@ -36,6 +36,18 @@ namespace Wilds.App
 				// Redirect to the main process
 				var activePid = AppSettingsStore.Values.Get("INSTANCE_ACTIVE", -1);
 				var instance = AppInstance.FindOrRegisterForKey(activePid.ToString());
+
+				// Why (rere P0 #3): INSTANCE_ACTIVE は JSON 永続化されており、
+				// プロセスの異常終了でも死 PID が残存する。FindOrRegisterForKey は存在しないキーで
+				// **新インスタンスを生成して IsCurrent=true を返す** ため、自分自身へのリダイレクト
+				// → デッドロック or Exit(0) で即死ループになる。IsCurrent なら自分が主インスタンスと
+				// みなして通常起動を続行する。
+				if (instance.IsCurrent)
+				{
+					pool.Dispose();
+					return;
+				}
+
 				RedirectActivationTo(instance, AppInstance.GetCurrent().GetActivatedEventArgs());
 
 				// Kill the current process
@@ -56,14 +68,19 @@ namespace Wilds.App
 		{
 			// Why: VS 18 F5 や外部起動で console が瞬間終了すると何も見えないため、
 			// 未ハンドル例外は %LOCALAPPDATA%\Wilds\startup-crash.log に必ず残す。
+			// Why (rere P2 #26): 以前は ex.ToString() フルダンプを書き出していたため、StackTrace 内の
+			// パスや引数、特に FluentFTP / LibGit2Sharp の URL (user:pass@host) が漏れる恐れがあった。
+			// 型名 + 1 行メッセージのみに縮退。完全な StackTrace は Sentry で送信すれば十分。
 			AppDomain.CurrentDomain.UnhandledException += static (_, e) =>
 			{
 				try
 				{
 					var path = SystemIO.Path.Combine(AppPaths.LocalFolderPath, "startup-crash.log");
 					SystemIO.Directory.CreateDirectory(AppPaths.LocalFolderPath);
+					var typeName = e.ExceptionObject?.GetType().FullName ?? "(unknown)";
+					var firstLine = (e.ExceptionObject as Exception)?.Message?.Split('\n')[0] ?? string.Empty;
 					SystemIO.File.AppendAllText(path,
-						$"[{DateTime.Now:O}] IsTerminating={e.IsTerminating}\n{e.ExceptionObject}\n\n");
+						$"[{DateTime.Now:O}] IsTerminating={e.IsTerminating} {typeName}: {firstLine}\n");
 				}
 				catch { /* best-effort */ }
 			};
@@ -73,8 +90,10 @@ namespace Wilds.App
 				{
 					var path = SystemIO.Path.Combine(AppPaths.LocalFolderPath, "startup-crash.log");
 					SystemIO.Directory.CreateDirectory(AppPaths.LocalFolderPath);
+					var typeName = e.Exception?.GetType().FullName ?? "(unknown)";
+					var firstLine = e.Exception?.Message?.Split('\n')[0] ?? string.Empty;
 					SystemIO.File.AppendAllText(path,
-						$"[{DateTime.Now:O}] UnobservedTaskException\n{e.Exception}\n\n");
+						$"[{DateTime.Now:O}] UnobservedTaskException {typeName}: {firstLine}\n");
 				}
 				catch { /* best-effort */ }
 			};

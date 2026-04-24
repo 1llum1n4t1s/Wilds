@@ -59,15 +59,25 @@ namespace Wilds.App.Helpers
 		{
 			lock (_writeLock)
 			{
+				// Why (rere P1 #20): 従来は File.Create が先にファイルを 0 バイトに切り詰め、
+				// その後 Serialize が例外を投げると 0 バイト残存 → 次回起動時に空設定扱いになっていた。
+				// tmp ファイルに書いてから File.Move(overwrite:true) で atomic swap に変更。
+				var tmpPath = _filePath + ".tmp";
 				try
 				{
 					var snapshot = new Dictionary<string, object?>(_values);
-					using var stream = SystemIO.File.Create(_filePath);
-					JsonSerializer.Serialize(stream, snapshot);
+					using (var stream = SystemIO.File.Create(tmpPath))
+					{
+						JsonSerializer.Serialize(stream, snapshot);
+					}
+					// NTFS の File.Move(overwrite=true) は atomic (別 volume では失敗する)
+					SystemIO.File.Move(tmpPath, _filePath, overwrite: true);
 				}
 				catch
 				{
-					// ignore — 永続化失敗はランタイムエラーにしない
+					// 永続化失敗はランタイムエラーにしない。tmp ファイルは残存するかもしれないが
+					// 次回 Save 成功時に上書きされる。
+					try { if (SystemIO.File.Exists(tmpPath)) SystemIO.File.Delete(tmpPath); } catch { }
 				}
 			}
 		}
