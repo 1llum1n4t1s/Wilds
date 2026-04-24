@@ -5,3 +5,13 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 10
+
+  # Why (rere P1 #13): GitHub Actions の uses: をタグ指定のまま放置すると、アクションリポジトリ
+  # のタグが書き換えられた際に CI 実行時に意図しないコードが走るサプライチェーン攻撃経路が残る。
+  # dependabot に github-actions エコシステムを追加して、SHA 固定 PR を定期的に
+  # 受け取れるようにする (本当はフル SHA 固定が推奨だが、dependabot の `groups` で自動追従させる)。
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
