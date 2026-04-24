@@ -15,7 +15,10 @@ namespace Wilds.App.Utils.Git
 	{
 		private static readonly StatusCenterViewModel StatusCenterViewModel = Ioc.Default.GetRequiredService<StatusCenterViewModel>();
 
-		private const string GIT_RESOURCE_NAME = "Files:https://github.com";
+		// Why (rere P1 #10 クリーンカット更新): 旧ブランド "Files:..." から "Wilds:..." へ統一。
+		// 既存ユーザーが持つ Windows Credential Manager の "Files:https://github.com" キーは
+		// 参照されなくなるため、次回 GitHub 連携時に再認証が必要 (リリースノートに記載)。
+		private const string GIT_RESOURCE_NAME = "Wilds:https://github.com";
 
 		private const string GIT_RESOURCE_USERNAME = "Personal Access Token";
 
@@ -596,15 +599,15 @@ namespace Wilds.App.Utils.Git
 			});
 		}
 
-		// Why (rere P1 #19): HttpClient を RequireGitAuthenticationAsync で毎回 new していた。
-		// ソケット枯渇リスク回避のため static singleton + デフォルトヘッダ設定を一元化。
-		// User-Agent は後段 (rere P1 #10 クリーンカットリブランド) で "Wilds App" に更新予定 (別 PR)。
+		// Why (rere P1 #19 + P1 #10 クリーンカット): HttpClient を singleton 化 + User-Agent をリブランド。
+		// 旧 "Files App" → "Wilds App" に変更。GitHub API のリクエストヘッダで
+		// フォークとしての識別を明確にする。
 		private static readonly HttpClient _authHttpClient = CreateAuthHttpClient();
 		private static HttpClient CreateAuthHttpClient()
 		{
 			var client = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 			client.DefaultRequestHeaders.Add("Accept", "application/json");
-			client.DefaultRequestHeaders.Add("User-Agent", "Files App");
+			client.DefaultRequestHeaders.Add("User-Agent", "Wilds App");
 			return client;
 		}
 

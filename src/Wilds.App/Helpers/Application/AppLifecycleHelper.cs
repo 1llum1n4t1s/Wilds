@@ -26,7 +26,10 @@ namespace Wilds.App.Helpers
 	/// </summary>
 	public static class AppLifecycleHelper
 	{
-		private readonly static string AppInformationKey = @$"Software\Files Community\{WildsAppInfo.PackageName}\v1\AppInformation";
+		// Why (rere P1 #11 クリーンカット更新): 旧ブランド "Software\Files Community\Wilds\" から
+		// "Software\Wilds\" に統一。既存ユーザーは旧キーを失うため初回起動扱いになる
+		// (AppInformation の起動カウント / バージョン記録が空の状態から再開)。リリースノートで案内。
+		private readonly static string AppInformationKey = @$"Software\{WildsAppInfo.PackageName}\v1\AppInformation";
 
 		/// <summary>
 		/// Gets the value that indicates whether the app is updated.

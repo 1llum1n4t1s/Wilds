@@ -139,7 +139,7 @@ namespace Wilds.App
 						SystemTrayIcon.Show();
 
 					// Sleep current instance
-					Program.Pool = new(0, 1, $"Files-{AppLifecycleHelper.AppEnvironment}-Instance");
+					Program.Pool = new(0, 1, $"Wilds-{AppLifecycleHelper.AppEnvironment}-Instance");
 
 					Thread.Yield();
 
@@ -257,7 +257,7 @@ namespace Wilds.App
 				await FilePropertiesHelpers.WaitClosingAll();
 
 				// Sleep current instance
-				Program.Pool = new(0, 1, $"Files-{AppLifecycleHelper.AppEnvironment}-Instance");
+				Program.Pool = new(0, 1, $"Wilds-{AppLifecycleHelper.AppEnvironment}-Instance");
 
 				Thread.Yield();
 

@@ -285,7 +285,7 @@ namespace Wilds.App.Utils.Taskbar
 		{
 			Microsoft.Windows.AppLifecycle.AppInstance.Restart("");
 
-			var pool = new Semaphore(0, 1, $"Files-{AppLifecycleHelper.AppEnvironment}-Instance", out var isNew);
+			var pool = new Semaphore(0, 1, $"Wilds-{AppLifecycleHelper.AppEnvironment}-Instance", out var isNew);
 			if (!isNew)
 				pool.Release();
 
@@ -298,7 +298,7 @@ namespace Wilds.App.Utils.Taskbar
 
 			App.AppModel.ForceProcessTermination = true;
 
-			var pool = new Semaphore(0, 1, $"Files-{AppLifecycleHelper.AppEnvironment}-Instance", out var isNew);
+			var pool = new Semaphore(0, 1, $"Wilds-{AppLifecycleHelper.AppEnvironment}-Instance", out var isNew);
 			if (!isNew)
 				pool.Release();
 			else
