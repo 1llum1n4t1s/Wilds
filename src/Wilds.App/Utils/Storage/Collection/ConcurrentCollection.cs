@@ -258,21 +258,7 @@ namespace Wilds.App.Helpers
 			ReplaceRange(0, result);
 		}
 
-		public void OrderOne(Func<List<T>, IEnumerable<T>> func, T item)
-		{
-			List<T> result;
-
-			lock (syncRoot)
-			{
-				result = func.Invoke(collection).ToList();
-			}
-
-			Remove(item);
-
-			var index = result.IndexOf(item);
-			if (index != -1)
-				Insert(index, item);
-		}
+		// Why (rere P3): OrderOne は呼び出し元が存在しない dead code のため削除。Order(func) で代替可能。
 
 		public List<T> ToList()
 		{

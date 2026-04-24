@@ -6,10 +6,12 @@ namespace Wilds.App.Helpers
 	// Credit: https://github.com/GihanSoft/NaturalStringComparer
 	public sealed class NaturalStringComparer
 	{
-		public static IComparer<object> GetForProcessor()
-		{
-			return new NaturalComparer(StringComparison.CurrentCultureIgnoreCase);
-		}
+		// Why (rere P2 #27): NaturalComparer は stateless なので毎ソート毎に new する必要がない。
+		// SortingHelper からフォルダ列挙の度に呼ばれるホットパスなので static cache で 0 alloc 化。
+		private static readonly IComparer<object> _cached =
+			new NaturalComparer(StringComparison.CurrentCultureIgnoreCase);
+
+		public static IComparer<object> GetForProcessor() => _cached;
 
 		/// <summary>
 		/// Provides functionality to compare and sort strings in a natural (human-readable) order.

@@ -647,7 +647,8 @@ namespace Wilds.App.Views.Shells
 
 			LayoutPreferencesManager.SetLayoutPreferencesForPath(ShellViewModel.WorkingDirectory, e.LayoutPreference);
 			if (e.IsAdaptiveLayoutUpdateRequired)
-				AdaptiveLayoutHelpers.ApplyAdaptativeLayout(InstanceViewModel.FolderSettings, ShellViewModel.FilesAndFolders.ToList());
+				// Why (rere P2 #29): FilesAndFolders は IList<T>。ToList() による全コピーは不要。
+				AdaptiveLayoutHelpers.ApplyAdaptativeLayout(InstanceViewModel.FolderSettings, ShellViewModel.FilesAndFolders);
 		}
 
 		protected virtual void ViewModel_WorkingDirectoryModified(object sender, WorkingDirectoryModifiedEventArgs e)

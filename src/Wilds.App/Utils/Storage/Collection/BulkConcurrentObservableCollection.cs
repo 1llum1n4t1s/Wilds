@@ -485,19 +485,9 @@ namespace Wilds.App.Utils.Storage
 			}
 		}
 
-		public void OrderOne(Func<List<T>, IEnumerable<T>> func, T item)
-		{
-			List<T> result;
-			lock (syncRoot)
-			{
-				result = func.Invoke(collection).ToList();
-
-				Remove(item);
-				var index = result.IndexOf(item);
-				if (index != -1)
-					Insert(index, item);
-			}
-		}
+		// Why (rere P3): OrderOne は呼び出し元が存在しない dead code。
+		// さらに lock(syncRoot) 内で Remove/Insert を呼ぶため将来的に再入デッドロックリスクがあり、
+		// 残しておくと誤用を誘う。削除。必要になれば Order(func) で代替可能。
 
 		int IList.Add(object? value)
 		{

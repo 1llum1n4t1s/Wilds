@@ -8,7 +8,12 @@ namespace Wilds.Shared.Helpers;
 
 public sealed class AsyncManualResetEvent
 {
-	private volatile TaskCompletionSource<bool> m_tcs = new TaskCompletionSource<bool>();
+	// Why (rere P0 #2): RunContinuationsAsynchronously を付けると TrySetResult の継続が
+	// 呼び出し元スレッドをジャックせず安全にスケジュールされるため、Set() 側の
+	// 複雑な Task.Factory.StartNew + Task.Wait ダンスを廃して単純な TrySetResult 1 行にできる。
+	// 従来実装は ThreadPool 枯渇 + PreferFairness (キュー末尾) で確実にデッドロックしていた。
+	private volatile TaskCompletionSource<bool> m_tcs =
+		new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
 	public async Task WaitAsync(CancellationToken cancellationToken = default)
 	{
@@ -40,15 +45,14 @@ public sealed class AsyncManualResetEvent
 
 	public void Set()
 	{
-		var tcs = m_tcs;
-		Task.Factory.StartNew(s => ((TaskCompletionSource<bool>)s!).TrySetResult(true),
-			tcs, CancellationToken.None, TaskCreationOptions.PreferFairness, TaskScheduler.Default);
-		tcs.Task.Wait();
+		// Why (rere P0 #2): RunContinuationsAsynchronously 前提なら TrySetResult だけで十分。
+		// 呼び出し元スレッド (特にファイル変更 watcher スレッド) をブロックしない。
+		m_tcs.TrySetResult(true);
 	}
 
 	public void Reset()
 	{
-		var newTcs = new TaskCompletionSource<bool>();
+		var newTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 		while (true)
 		{
 			var tcs = m_tcs;

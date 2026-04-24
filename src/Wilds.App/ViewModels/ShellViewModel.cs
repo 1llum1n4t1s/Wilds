@@ -1716,7 +1716,9 @@ namespace Wilds.App.ViewModels
 				ItemLoadStatusChanged?.Invoke(this, new ItemLoadStatusChangedEventArgs() { Status = ItemLoadStatusChangedEventArgs.ItemLoadStatus.Complete, PreviousDirectory = previousDir, Path = path });
 				IsLoadingItems = false;
 
-				AdaptiveLayoutHelpers.ApplyAdaptativeLayout(folderSettings, filesAndFolders.ToList());
+				// Why (rere P2 #29): ApplyAdaptativeLayout は Count と FileExtension を読むだけで
+				// 書き換えない。ConcurrentCollection は IList<T> を実装しているので ToList() コピー不要。
+				AdaptiveLayoutHelpers.ApplyAdaptativeLayout(folderSettings, filesAndFolders);
 			}
 			finally
 			{
@@ -2081,9 +2083,11 @@ namespace Wilds.App.ViewModels
 
 		private void CheckForSolutionFile()
 		{
-			SolutionFilePath = filesAndFolders.ToList().AsParallel()
-				.Where(item => FileExtensionHelpers.HasExtension(item.FileExtension, ".sln", ".slnx"))
-				.FirstOrDefault()?.ItemPath;
+			// Why (rere P2 #30): ConcurrentCollection.Find でロック下 1 パス線形検索に置換。
+			// ToList() 全コピーも PLINQ スケジューリングオーバーヘッドも不要 (通常 .sln は 0〜1 件)。
+			SolutionFilePath = filesAndFolders
+				.Find(item => FileExtensionHelpers.HasExtension(item.FileExtension, ".sln", ".slnx"))
+				?.ItemPath;
 		}
 
 		private void GetDesktopIniFileData()
