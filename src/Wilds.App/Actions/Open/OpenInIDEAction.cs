@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Files Community
 // Licensed under the MIT License.
 
+using Microsoft.Extensions.Logging;
+
 namespace Wilds.App.Actions
 {
 	[GeneratedRichCommand]
@@ -37,12 +39,31 @@ namespace Wilds.App.Actions
 
 		public async Task ExecuteAsync(object? parameter = null)
 		{
-			var res = await Win32Helper.RunPowershellCommandAsync(
-				$"& \'{_devToolsSettingsService.IDEPath}\' \'{_context.ShellPage?.ShellViewModel.WorkingDirectory}\'",
-				PowerShellExecutionOptions.Hidden
-			);
+			// Why (rere P0 #1 根治): PowerShell `& 'path' 'arg'` を Process.Start + ArgumentList に置換。
+			// WorkingDirectory にパス内 `'` が含まれるケースでもインジェクションしない。
+			var idePath = _devToolsSettingsService.IDEPath;
+			var workingDirectory = _context.ShellPage?.ShellViewModel.WorkingDirectory;
+			bool started = false;
+			if (!string.IsNullOrWhiteSpace(idePath) && !string.IsNullOrWhiteSpace(workingDirectory))
+			{
+				try
+				{
+					var psi = new System.Diagnostics.ProcessStartInfo
+					{
+						FileName = idePath,
+						UseShellExecute = false,
+					};
+					psi.ArgumentList.Add(workingDirectory);
+					using var proc = System.Diagnostics.Process.Start(psi);
+					started = proc is not null;
+				}
+				catch (Exception ex)
+				{
+					App.Logger?.LogWarning(ex, "Failed to start IDE {Path}", idePath);
+				}
+			}
 
-			if (!res)
+			if (!started)
 				await DynamicDialogFactory.ShowFor_IDEErrorDialog(_devToolsSettingsService.IDEName);
 		}
 

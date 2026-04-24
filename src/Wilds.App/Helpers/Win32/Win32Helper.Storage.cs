@@ -428,21 +428,42 @@ namespace Wilds.App.Helpers
 			return RunPowershellCommandAsync($"-command \"$Signature = '[DllImport(\\\"shell32.dll\\\", SetLastError = false)]public static extern uint SHFormatDrive(IntPtr hwnd, uint drive, uint fmtID, uint options);'; $SHFormatDrive = Add-Type -MemberDefinition $Signature -Name \"Win32SHFormatDrive\" -Namespace Win32Functions -PassThru; $SHFormatDrive::SHFormatDrive(0, {driveIndex}, 0xFFFF, 0x0001)\"", PowerShellExecutionOptions.Elevated | PowerShellExecutionOptions.Hidden);
 		}
 
+		/// <summary>
+		/// PowerShell 文字列リテラル (シングルクォート括り) に埋め込む前に入力値をエスケープする。
+		/// </summary>
+		/// <remarks>
+		/// Why (rere P0 #1): PowerShell の単一引用符文字列内では `'` を `''` と二重化することで
+		/// 閉じずにエスケープできる。これを行わずにユーザー入力を `'...'` に連結すると
+		/// シングルクォート注入で任意コマンド実行 (昇格経路では LPE) になる。
+		/// 根治は P/Invoke 直接化だが Kernel32.SetVolumeLabel / VirtDisk / Font API の
+		/// 正確な置き換えには追加検証が必要なため、まず止血として全エントリポイントに適用。
+		/// </remarks>
+		private static string EscapePowerShellLiteral(string value)
+			=> value?.Replace("'", "''") ?? string.Empty;
+
 		public static void SetVolumeLabel(string drivePath, string newLabel)
 		{
 			// Rename requires elevation
-			RunPowershellCommand($"-command \"$Signature = '[DllImport(\\\"kernel32.dll\\\", SetLastError = false)]public static extern bool SetVolumeLabel(string lpRootPathName, string lpVolumeName);'; $SetVolumeLabel = Add-Type -MemberDefinition $Signature -Name \"Win32SetVolumeLabel\" -Namespace Win32Functions -PassThru; $SetVolumeLabel::SetVolumeLabel('{drivePath}', '{newLabel}')\"", PowerShellExecutionOptions.Elevated | PowerShellExecutionOptions.Hidden);
+			// TODO(rere P0 #1 根治): Kernel32.SetVolumeLabel の直 P/Invoke 化 (現在は止血のみ)
+			var pathEsc = EscapePowerShellLiteral(drivePath);
+			var labelEsc = EscapePowerShellLiteral(newLabel);
+			RunPowershellCommand($"-command \"$Signature = '[DllImport(\\\"kernel32.dll\\\", SetLastError = false)]public static extern bool SetVolumeLabel(string lpRootPathName, string lpVolumeName);'; $SetVolumeLabel = Add-Type -MemberDefinition $Signature -Name \"Win32SetVolumeLabel\" -Namespace Win32Functions -PassThru; $SetVolumeLabel::SetVolumeLabel('{pathEsc}', '{labelEsc}')\"", PowerShellExecutionOptions.Elevated | PowerShellExecutionOptions.Hidden);
 		}
 
 		public static void SetNetworkDriveLabel(string driveName, string newLabel)
 		{
-			RunPowershellCommand($"-command \"(New-Object -ComObject Shell.Application).NameSpace('{driveName}').Self.Name='{newLabel}'\"", PowerShellExecutionOptions.Hidden);
+			// TODO(rere P0 #1 根治): Shell COM (IShellDispatch.NameSpace) の直接呼び出し化 (現在は止血のみ)
+			var nameEsc = EscapePowerShellLiteral(driveName);
+			var labelEsc = EscapePowerShellLiteral(newLabel);
+			RunPowershellCommand($"-command \"(New-Object -ComObject Shell.Application).NameSpace('{nameEsc}').Self.Name='{labelEsc}'\"", PowerShellExecutionOptions.Hidden);
 		}
 
 		public static Task<bool> MountVhdDisk(string vhdPath)
 		{
 			// Mounting requires elevation
-			return RunPowershellCommandAsync($"-command \"Mount-DiskImage -ImagePath '{vhdPath}'\"", PowerShellExecutionOptions.Elevated | PowerShellExecutionOptions.Hidden);
+			// TODO(rere P0 #1 根治): VirtDisk.AttachVirtualDisk の直 P/Invoke 化 (現在は止血のみ)
+			var pathEsc = EscapePowerShellLiteral(vhdPath);
+			return RunPowershellCommandAsync($"-command \"Mount-DiskImage -ImagePath '{pathEsc}'\"", PowerShellExecutionOptions.Elevated | PowerShellExecutionOptions.Hidden);
 		}
 
 		public static Bitmap? GetBitmapFromHBitmap(HBITMAP hBitmap)
@@ -743,7 +764,15 @@ namespace Wilds.App.Helpers
 			foreach (string fontFilePath in fontFilePaths)
 			{
 				var destinationPath = Path.Combine(fontDirectory, Path.GetFileName(fontFilePath));
-				var appendCommand = $"Copy-Item '{fontFilePath}' '{fontDirectory}'; New-ItemProperty -Name '{Path.GetFileNameWithoutExtension(fontFilePath)}' -Path '{registryKey}' -PropertyType string -Value '{destinationPath}';";
+				// Why (rere P0 #1): 全変数を PowerShell literal escape (`'` → `''`) してから埋め込む。
+				// Elevated 経路なのでエスケープ漏れは LPE に直結する。
+				// TODO(根治): AddFontResourceEx + Registry SetValue の直接 P/Invoke 化
+				var fontFilePathEsc = EscapePowerShellLiteral(fontFilePath);
+				var fontDirectoryEsc = EscapePowerShellLiteral(fontDirectory);
+				var fontNameEsc = EscapePowerShellLiteral(Path.GetFileNameWithoutExtension(fontFilePath));
+				var registryKeyEsc = EscapePowerShellLiteral(registryKey);
+				var destinationPathEsc = EscapePowerShellLiteral(destinationPath);
+				var appendCommand = $"Copy-Item '{fontFilePathEsc}' '{fontDirectoryEsc}'; New-ItemProperty -Name '{fontNameEsc}' -Path '{registryKeyEsc}' -PropertyType string -Value '{destinationPathEsc}';";
 
 				if (psCommand.Length + appendCommand.Length > 32766)
 				{

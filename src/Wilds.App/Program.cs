@@ -1,6 +1,7 @@
 // Copyright (c) Files Community
 // Licensed under the MIT License.
 
+using Microsoft.Extensions.Logging;
 using Wilds.Shared.Helpers;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -183,14 +184,22 @@ namespace Wilds.App
 			}
 			else if (activatedArgs.Data is ILaunchActivatedEventArgs tileArgs)
 			{
+				// Why (rere P1 #15): ILaunchActivatedEventArgs.Arguments は外部アプリ / プロトコル経由で
+				// 任意パスが渡せる。従来は「拡張子が実行可能 + File.Exists」だけで実行していたが、
+				// それだと任意場所の .bat / .cmd を起動可能。WildsAppInfo.InstalledPath 配下に限定する。
 				if (tileArgs.Arguments is not null &&
-					FileExtensionHelpers.IsExecutableFile(tileArgs.Arguments))
+					FileExtensionHelpers.IsExecutableFile(tileArgs.Arguments) &&
+					File.Exists(tileArgs.Arguments))
 				{
-					if (File.Exists(tileArgs.Arguments))
+					var installedPath = WildsAppInfo.InstalledPath;
+					var fullTilePath = System.IO.Path.GetFullPath(tileArgs.Arguments);
+					var installedFull = System.IO.Path.GetFullPath(installedPath).TrimEnd(System.IO.Path.DirectorySeparatorChar) + System.IO.Path.DirectorySeparatorChar;
+					if (fullTilePath.StartsWith(installedFull, StringComparison.OrdinalIgnoreCase))
 					{
-						OpenFileFromTile(tileArgs.Arguments);
+						OpenFileFromTile(fullTilePath);
 						return;
 					}
+					App.Logger?.LogWarning("Rejected tile activation outside installed path: {Path}", fullTilePath);
 				}
 			}
 
