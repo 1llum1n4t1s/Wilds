@@ -1,6 +1,11 @@
 ﻿<!--  Copyright (c) Files Community. Licensed under the MIT License.  -->
 <Project>
   <PropertyGroup>
+    <!-- Why: ソリューション全体の既定アセンブリ/パッケージバージョン。
+         velopack-release.yml が `-p:Version=$RELEASE_VERSION` で上書きするので CI 上では
+         release/x.y.z ブランチ名が優先される。手元 dotnet build/publish や vava の次回実行時の
+         バージョン検出元として使う。 -->
+    <Version>1.0.0</Version>
     <TargetFrameworkVersion>net10.0</TargetFrameworkVersion>
     <TargetWindowsVersion>10.0.26100.0</TargetWindowsVersion>
     <MinimalWindowsVersion>10.0.19041.0</MinimalWindowsVersion>
